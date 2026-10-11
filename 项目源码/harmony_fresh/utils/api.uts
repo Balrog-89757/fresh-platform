@@ -1,0 +1,347 @@
+/**
+ * 接口封装：与 SpringBoot 后端 controller 一一对应
+ *
+ * 路径前缀 /api 由后端 WebConfig 统一添加，
+ * 因此这里按「/api/控制器路径」书写，例如 CartController -> /api/cart
+ */
+
+import { request } from './request.uts'
+import type {
+	UserInfo, Category, Product, CarouselItem, CartItem, Address,
+	OrderInfo, Logistics, Review,
+	ProductPage, CartPage, AddressPage, OrderPage, ReviewPage
+} from './model.uts'
+
+/* ============================ 用户 ============================ */
+
+/** 登录：POST /api/user/login，返回 User（含 token） */
+export async function apiLogin(username : string, password : string) : Promise<UserInfo | null> {
+	const res = await request('/api/user/login', 'POST', {
+		username: username,
+		password: password
+	} as UTSJSONObject)
+	if (res == null) {
+		return null
+	}
+	return res as UserInfo
+}
+
+/** 注册：POST /api/user/add（角色固定为普通用户 USER） */
+export async function apiRegister(username : string, password : string, name : string, email : string) : Promise<boolean> {
+	const payload = {} as UTSJSONObject
+	payload['username'] = username
+	payload['password'] = password
+	payload['name'] = name
+	payload['email'] = email
+	payload['role'] = 'USER'
+	await request('/api/user/add', 'POST', payload)
+	return true
+}
+
+/** 用户详情：GET /api/user/{id} */
+export async function apiUserInfo(userId : number) : Promise<UserInfo | null> {
+	const res = await request('/api/user/' + userId)
+	if (res == null) {
+		return null
+	}
+	return res as UserInfo
+}
+
+/* ============================ 首页 ============================ */
+
+/** 分类列表：GET /api/category/all */
+export async function apiCategories() : Promise<Array<Category>> {
+	const res = await request('/api/category/all')
+	if (res == null) {
+		return [] as Array<Category>
+	}
+	return res as Array<Category>
+}
+
+/** 首页轮播：GET /api/carousel/active */
+export async function apiCarousel() : Promise<Array<CarouselItem>> {
+	const res = await request('/api/carousel/active')
+	if (res == null) {
+		return [] as Array<CarouselItem>
+	}
+	return res as Array<CarouselItem>
+}
+
+/** 猜你喜欢：GET /api/recommend/user/{userId}（基于协同过滤，无数据时按销量返回） */
+export async function apiRecommend(userId : number) : Promise<Array<Product>> {
+	const res = await request('/api/recommend/user/' + userId)
+	if (res == null) {
+		return [] as Array<Product>
+	}
+	return res as Array<Product>
+}
+
+/* ============================ 商品 ============================ */
+
+/**
+ * 商品分页：GET /api/product/page
+ * 参数与后端 ProductController#getProductsByPage 一致
+ */
+export async function apiProductPage(
+	currentPage : number = 1,
+	size : number = 10,
+	categoryId : number = 0,
+	name : string = '',
+	status : number = -1,
+	sortField : string = '',
+	sortOrder : string = '',
+	minPrice : number = 0,
+	maxPrice : number = 0
+) : Promise<ProductPage> {
+	const params = {} as UTSJSONObject
+	params['currentPage'] = currentPage
+	params['size'] = size
+	if (categoryId > 0) {
+		params['categoryId'] = categoryId
+	}
+	if (name.length > 0) {
+		params['name'] = name
+	}
+	if (status >= 0) {
+		params['status'] = status
+	}
+	if (sortField.length > 0) {
+		params['sortField'] = sortField
+	}
+	if (sortOrder.length > 0) {
+		params['sortOrder'] = sortOrder
+	}
+	if (minPrice > 0) {
+		params['minPrice'] = minPrice
+	}
+	if (maxPrice > 0) {
+		params['maxPrice'] = maxPrice
+	}
+	const res = await request('/api/product/page', 'GET', params)
+	if (res == null) {
+		return { records: [] as Array<Product>, total: 0, current: currentPage, size: size } as ProductPage
+	}
+	return res as ProductPage
+}
+
+/** 商品详情：GET /api/product/{id} */
+export async function apiProductDetail(id : number) : Promise<Product | null> {
+	const res = await request('/api/product/' + id)
+	if (res == null) {
+		return null
+	}
+	return res as Product
+}
+
+/** 商品评价：GET /api/review/page?productId=&status=1 */
+export async function apiProductReviews(productId : number, size : number = 20) : Promise<Array<Review>> {
+	const params = {} as UTSJSONObject
+	params['productId'] = productId
+	params['status'] = 1
+	params['currentPage'] = 1
+	params['size'] = size
+	const res = await request('/api/review/page', 'GET', params)
+	if (res == null) {
+		return [] as Array<Review>
+	}
+	const page = res as ReviewPage
+	const records = page.records
+	return records == null ? ([] as Array<Review>) : records
+}
+
+/* ============================ 购物车 ============================ */
+
+/** 加入购物车：POST /api/cart（同商品会自动累加数量） */
+export async function apiAddCart(userId : number, productId : number, quantity : number) : Promise<CartItem | null> {
+	const res = await request('/api/cart', 'POST', {
+		userId: userId,
+		productId: productId,
+		quantity: quantity
+	} as UTSJSONObject)
+	if (res == null) {
+		return null
+	}
+	return res as CartItem
+}
+
+/** 购物车列表：GET /api/cart/page（后端 /cart/user/{id} 在空列表时返回错误码，故使用分页接口） */
+export async function apiCartList(userId : number) : Promise<Array<CartItem>> {
+	const params = {} as UTSJSONObject
+	params['userId'] = userId
+	params['currentPage'] = 1
+	params['size'] = 200
+	const res = await request('/api/cart/page', 'GET', params)
+	if (res == null) {
+		return [] as Array<CartItem>
+	}
+	const page = res as CartPage
+	const records = page.records
+	return records == null ? ([] as Array<CartItem>) : records
+}
+
+/** 修改数量：PUT /api/cart/{id}?quantity= */
+export async function apiUpdateCartQuantity(cartId : number, quantity : number) : Promise<void> {
+	await request('/api/cart/' + cartId + '?quantity=' + quantity, 'PUT')
+}
+
+/** 删除购物车项：DELETE /api/cart/{id} */
+export async function apiDeleteCartItem(cartId : number) : Promise<void> {
+	await request('/api/cart/' + cartId, 'DELETE')
+}
+
+/** 清空购物车：DELETE /api/cart/clear/{userId} */
+export async function apiClearCart(userId : number) : Promise<void> {
+	await request('/api/cart/clear/' + userId, 'DELETE')
+}
+
+/* ============================ 收货地址 ============================ */
+
+/** 地址列表：GET /api/address/page?userId= */
+export async function apiAddressList(userId : number) : Promise<Array<Address>> {
+	const params = {} as UTSJSONObject
+	params['userId'] = userId
+	params['currentPage'] = 1
+	params['size'] = 100
+	const res = await request('/api/address/page', 'GET', params)
+	if (res == null) {
+		return [] as Array<Address>
+	}
+	const page = res as AddressPage
+	const records = page.records
+	return records == null ? ([] as Array<Address>) : records
+}
+
+/** 地址详情：GET /api/address/{id} */
+export async function apiAddressDetail(id : number) : Promise<Address | null> {
+	const res = await request('/api/address/' + id)
+	if (res == null) {
+		return null
+	}
+	return res as Address
+}
+
+/** 新增地址：POST /api/address */
+export async function apiAddAddress(userId : number, receiver : string, phone : string, address : string) : Promise<Address | null> {
+	const res = await request('/api/address', 'POST', {
+		userId: userId,
+		receiver: receiver,
+		phone: phone,
+		address: address
+	} as UTSJSONObject)
+	if (res == null) {
+		return null
+	}
+	return res as Address
+}
+
+/** 修改地址：PUT /api/address/{id} */
+export async function apiUpdateAddress(id : number, userId : number, receiver : string, phone : string, address : string) : Promise<void> {
+	const payload = {} as UTSJSONObject
+	payload['id'] = id
+	payload['userId'] = userId
+	payload['receiver'] = receiver
+	payload['phone'] = phone
+	payload['address'] = address
+	await request('/api/address/' + id, 'PUT', payload)
+}
+
+/** 删除地址：DELETE /api/address/{id} */
+export async function apiDeleteAddress(id : number) : Promise<void> {
+	await request('/api/address/' + id, 'DELETE')
+}
+
+/* ============================ 订单 ============================ */
+
+/**
+ * 创建订单：POST /api/order
+ * 后端 OrderService#createOrder 会用 price * quantity 重新计算 totalPrice，
+ * 因此 price 必须传「实际成交单价」（有折扣时传 discountPrice）。
+ */
+export async function apiCreateOrder(
+	userId : number,
+	productId : number,
+	quantity : number,
+	price : number,
+	recvName : string,
+	recvPhone : string,
+	recvAddress : string,
+	remark : string = ''
+) : Promise<OrderInfo | null> {
+	const payload = {} as UTSJSONObject
+	payload['userId'] = userId
+	payload['productId'] = productId
+	payload['quantity'] = quantity
+	payload['price'] = price
+	payload['totalPrice'] = price * quantity
+	payload['recvName'] = recvName
+	payload['recvPhone'] = recvPhone
+	payload['recvAddress'] = recvAddress
+	if (remark.length > 0) {
+		payload['remark'] = remark
+	}
+	const res = await request('/api/order', 'POST', payload)
+	if (res == null) {
+		return null
+	}
+	return res as OrderInfo
+}
+
+/** 模拟支付：PUT /api/order/{id}/pay（扣减库存、累加销量，订单变为已支付=1，商户即可发货） */
+export async function apiPayOrder(orderId : number) : Promise<void> {
+	await request('/api/order/' + orderId + '/pay', 'PUT')
+}
+
+/** 订单分页：GET /api/order/page?userId=&status=（status 为空表示全部） */
+export async function apiOrderPage(userId : number, status : string = '', currentPage : number = 1, size : number = 20) : Promise<Array<OrderInfo>> {
+	const params = {} as UTSJSONObject
+	params['userId'] = userId
+	params['currentPage'] = currentPage
+	params['size'] = size
+	if (status.length > 0) {
+		params['status'] = status
+	}
+	const res = await request('/api/order/page', 'GET', params)
+	if (res == null) {
+		return [] as Array<OrderInfo>
+	}
+	const page = res as OrderPage
+	const records = page.records
+	return records == null ? ([] as Array<OrderInfo>) : records
+}
+
+/** 订单详情：GET /api/order/{id}（内含 product / merchant 关联数据） */
+export async function apiOrderDetail(id : number) : Promise<OrderInfo | null> {
+	const res = await request('/api/order/' + id)
+	if (res == null) {
+		return null
+	}
+	return res as OrderInfo
+}
+
+/** 修改订单状态：PUT /api/order/{id}/status?status=（4=取消，3=确认收货并同步物流为已签收） */
+export async function apiUpdateOrderStatus(id : number, status : number) : Promise<void> {
+	await request('/api/order/' + id + '/status?status=' + status, 'PUT')
+}
+
+/** 修改收货信息：PUT /api/order/{id}/address?name=&address=&phone=（后端用 @RequestParam 接收） */
+export async function apiUpdateOrderAddress(id : number, name : string, address : string, phone : string) : Promise<void> {
+	await request('/api/order/' + id + '/address?name=' + encodeURIComponent(name)
+		+ '&address=' + encodeURIComponent(address)
+		+ '&phone=' + encodeURIComponent(phone), 'PUT')
+}
+
+/** 申请退款：POST /api/order/{id}/refund?reason= */
+export async function apiRefundOrder(id : number, reason : string) : Promise<void> {
+	await request('/api/order/' + id + '/refund?reason=' + encodeURIComponent(reason), 'POST')
+}
+
+/* ============================ 物流 ============================ */
+
+/** 查询订单物流：GET /api/logistics/order/{orderId}（未发货时后端返回错误码） */
+export async function apiOrderLogistics(orderId : number) : Promise<Logistics | null> {
+	const res = await request('/api/logistics/order/' + orderId)
+	if (res == null) {
+		return null
+	}
+	return res as Logistics
+}

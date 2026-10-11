@@ -1,0 +1,169 @@
+/**
+ * 展示层通用工具：价格、时间、订单状态、图片
+ */
+
+import { resolveImage, getUserId, isLogin } from './config.uts'
+import { apiCartList } from './api.uts'
+import type { Product, OrderInfo, Logistics, CartItem } from './model.uts'
+
+/** 保留两位小数，例如 15.8 -> "15.80" */
+export function money(v : number | null) : string {
+	if (v == null) {
+		return '0.00'
+	}
+	return v.toFixed(2)
+}
+
+/** 商品实际成交单价（开启了折扣则用折扣价） */
+export function salePrice(p : Product | null) : number {
+	if (p == null) {
+		return 0
+	}
+	if (p.isDiscount != null && p.isDiscount == 1 && p.discountPrice != null && p.discountPrice > 0) {
+		return p.discountPrice
+	}
+	return p.price
+}
+
+/** 商品图片完整地址 */
+export function productImage(p : Product | null) : string {
+	if (p == null) {
+		return ''
+	}
+	return resolveImage(p.imageUrl)
+}
+
+/** 订单里的商品单价（以订单快照为准，兼容折扣） */
+export function orderPrice(o : OrderInfo) : number {
+	if (o.product != null && o.product.isDiscount != null && o.product.isDiscount == 1 && o.product.discountPrice != null) {
+		return o.product.discountPrice
+	}
+	return o.price
+}
+
+/** 订单商品小计 */
+export function orderSubtotal(o : OrderInfo) : number {
+	return orderPrice(o) * o.quantity
+}
+
+/** 是否展示原价划线（有折扣时） */
+export function hasDiscount(p : Product | null) : boolean {
+	if (p == null) {
+		return false
+	}
+	return p.isDiscount != null && p.isDiscount == 1 && p.discountPrice != null && p.discountPrice > 0
+}
+
+/** 后端返回 "2025-06-04 11:47:24"，直接截断到分钟即可 */
+export function formatTime(t : string | null) : string {
+	if (t == null || t.length == 0) {
+		return ''
+	}
+	let s = t.replace('T', ' ')
+	if (s.length >= 16) {
+		return s.substring(0, 16)
+	}
+	return s
+}
+
+/* ------------------------- 订单状态 -------------------------
+ * order.status：0待支付 1已支付(待发货) 2已发货(待收货) 3已完成 4已取消 5退款中 6已退款 7退款失败
+ * ---------------------------------------------------------- */
+
+export function orderStatusText(status : number) : string {
+	if (status == 0) return '待付款'
+	if (status == 1) return '待发货'
+	if (status == 2) return '待收货'
+	if (status == 3) return '已完成'
+	if (status == 4) return '已取消'
+	if (status == 5) return '退款中'
+	if (status == 6) return '已退款'
+	if (status == 7) return '退款失败'
+	return '未知状态'
+}
+
+export function orderStatusColor(status : number) : string {
+	if (status == 0) return '#E6A23C'
+	if (status == 1) return '#409EFF'
+	if (status == 2) return '#67C23A'
+	if (status == 3) return '#909399'
+	if (status == 4) return '#C0C4CC'
+	if (status == 5) return '#F56C6C'
+	if (status == 6) return '#F56C6C'
+	return '#909399'
+}
+
+/** 订单列表顶部筛选（status 值 -1 表示全部，转字符串时用空串） */
+export type StatusTab = {
+	label : string
+	value : string
+}
+
+export function orderStatusTabs() : Array<StatusTab> {
+	return [
+		{ label: '全部', value: '' } as StatusTab,
+		{ label: '待付款', value: '0' } as StatusTab,
+		{ label: '待发货', value: '1' } as StatusTab,
+		{ label: '待收货', value: '2' } as StatusTab,
+		{ label: '已完成', value: '3' } as StatusTab
+	]
+}
+
+/** 物流状态：0待发货 1已发货 2已签收 3已取消 */
+export function logisticsStatusText(status : number | null) : string {
+	if (status == null) return '未知'
+	if (status == 0) return '待发货'
+	if (status == 1) return '运输中'
+	if (status == 2) return '已签收'
+	if (status == 3) return '已取消'
+	return '未知'
+}
+
+/** 物流是否可展示（订单已发货之后才会创建物流记录） */
+export function canViewLogistics(o : OrderInfo) : boolean {
+	return o.status >= 2 && o.status != 4
+}
+
+/**
+ * 购物车 tabBar 角标（tabBar 下标：0首页 1购物车 2订单 3我的）
+ * count <= 0 时移除角标
+ */
+export function updateCartBadge(count : number) : void {
+	if (count > 0) {
+		uni.setTabBarBadge({
+			index: 1,
+			text: count > 99 ? '99+' : count.toString(),
+			fail: () => {
+			}
+		})
+	} else {
+		uni.removeTabBarBadge({
+			index: 1,
+			fail: () => {
+			}
+		})
+	}
+}
+
+/** 跳转到 tabBar 页面（switchTab 才能正确切换 tab） */
+export function switchTab(url : string) : void {
+	uni.switchTab({ url: url })
+}
+
+/** 重新统计购物车件数并刷新 tabBar 角标 */
+export async function refreshCartBadge() : Promise<void> {
+	if (!isLogin()) {
+		updateCartBadge(0)
+		return
+	}
+	try {
+		const list = await apiCartList(getUserId())
+		let sum = 0
+		list.forEach((it : CartItem) => {
+			sum = sum + it.quantity
+		})
+		updateCartBadge(sum)
+	} catch (e) {
+		updateCartBadge(0)
+	}
+}

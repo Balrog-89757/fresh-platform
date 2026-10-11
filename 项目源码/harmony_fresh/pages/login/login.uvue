@@ -1,0 +1,275 @@
+<template>
+	<view class="login-root">
+		<!-- 顶部品牌区 -->
+		<view class="brand">
+			<view class="logo-circle">
+				<text class="logo-text">鲜</text>
+			</view>
+			<text class="brand-name">生鲜优选商城</text>
+			<text class="brand-slogan">产地直供 · 新鲜到家</text>
+		</view>
+
+		<!-- 登录表单 -->
+		<view class="form-card">
+			<text class="form-title">账号登录</text>
+
+			<view class="input-line">
+				<text class="input-icon">账号</text>
+				<input class="input-box"
+					v-model="username"
+					placeholder="请输入用户名"
+					placeholder-class="ph"
+					:maxlength="30" />
+			</view>
+
+			<view class="input-line">
+				<text class="input-icon">密码</text>
+				<input class="input-box"
+					v-model="password"
+					:password="true"
+					placeholder="请输入密码"
+					placeholder-class="ph"
+					:maxlength="30"
+					@confirm="handleLogin" />
+			</view>
+
+			<view class="login-btn" :class="canSubmit ? 'login-btn-on' : 'login-btn-off'" @click="handleLogin">
+				<text class="login-btn-text">{{ loading ? '登录中...' : '登 录' }}</text>
+			</view>
+
+			<view class="form-foot">
+				<text class="foot-link" @click="goRegister">还没有账号？立即注册</text>
+			</view>
+		</view>
+
+		<!-- 调试提示：服务器地址 -->
+		<view class="server-tip" @click="editServer">
+			<text class="server-tip-text">当前服务器：{{ baseUrl }}</text>
+			<text class="server-tip-text">（点此修改，模拟器可填 http://10.0.2.2:1234）</text>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiLogin } from '../../utils/api.uts'
+	import { saveLogin, getBaseUrl, setBaseUrl, isLogin } from '../../utils/config.uts'
+	import type { UserInfo } from '../../utils/model.uts'
+
+	const username = ref('')
+	const password = ref('')
+	const loading = ref(false)
+	const baseUrl = ref(getBaseUrl())
+
+	/** 账号密码都填写后才允许提交 */
+	const canSubmit = computed((): boolean => {
+		return username.value.trim().length > 0 && password.value.length > 0
+	})
+
+	onLoad(() => {
+		baseUrl.value = getBaseUrl()
+		// 已登录则直接进入首页
+		if (isLogin()) {
+			uni.reLaunch({ url: '/pages/index/index' })
+		}
+	})
+
+	async function handleLogin() : Promise<void> {
+		if (loading.value) {
+			return
+		}
+		if (username.value.trim().length == 0) {
+			uni.showToast({ title: '请输入用户名', icon: 'none' })
+			return
+		}
+		if (password.value.length == 0) {
+			uni.showToast({ title: '请输入密码', icon: 'none' })
+			return
+		}
+
+		loading.value = true
+		try {
+			const user = await apiLogin(username.value.trim(), password.value)
+			if (user == null) {
+				uni.showToast({ title: '登录失败', icon: 'none' })
+				return
+			}
+			const token = user.token
+			if (token == null || token.length == 0) {
+				uni.showToast({ title: '登录失败：未获取到凭证', icon: 'none' })
+				return
+			}
+			let displayName = user.name
+			if (displayName == null || displayName.length == 0) {
+				displayName = user.username
+			}
+			if (displayName == null) {
+				displayName = '用户'
+			}
+			let role = user.role
+			if (role == null) {
+				role = 'USER'
+			}
+			saveLogin(user.id, displayName, role, token)
+			uni.showToast({ title: '登录成功', icon: 'success' })
+			setTimeout(() => {
+				uni.reLaunch({ url: '/pages/index/index' })
+			}, 600)
+		} catch (e) {
+			// 具体错误信息已在 request.uts 中统一 toast
+		} finally {
+			loading.value = false
+		}
+	}
+
+	function goRegister() : void {
+		uni.navigateTo({ url: '/pages/register/register' })
+	}
+
+	/** 修改后端地址，方便真机 / 模拟器切换 */
+	function editServer() : void {
+		uni.showModal({
+			title: '服务器地址',
+			content: baseUrl.value,
+			editable: true,
+			placeholderText: 'http://192.168.x.x:1234',
+			success: (res) => {
+				if (res.confirm) {
+					const input = res.content
+					if (input != null && input.trim().length > 0) {
+						setBaseUrl(input)
+						baseUrl.value = getBaseUrl()
+						uni.showToast({ title: '已保存服务器地址', icon: 'none' })
+					}
+				}
+			}
+		})
+	}
+</script>
+
+<style>
+	.login-root {
+		flex: 1;
+		background-image: linear-gradient(to bottom, #67C23A, #A8DE8A 40%, #F4F6F3 40%, #F4F6F3);
+		padding: 0 20px;
+	}
+
+	.brand {
+		align-items: center;
+		padding-top: 70px;
+		padding-bottom: 24px;
+	}
+
+	.logo-circle {
+		width: 68px;
+		height: 68px;
+		border-radius: 34px;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.logo-text {
+		font-size: 32px;
+		font-weight: bold;
+		color: #67C23A;
+	}
+
+	.brand-name {
+		font-size: 22px;
+		font-weight: bold;
+		color: #FFFFFF;
+		margin-top: 12px;
+	}
+
+	.brand-slogan {
+		font-size: 13px;
+		color: #F0FBEA;
+		margin-top: 6px;
+	}
+
+	.form-card {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 20px 16px;
+		box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.06);
+	}
+
+	.form-title {
+		font-size: 18px;
+		font-weight: bold;
+		color: #303133;
+		margin-bottom: 16px;
+	}
+
+	.input-line {
+		flex-direction: row;
+		align-items: center;
+		background-color: #F7F8FA;
+		border-radius: 10px;
+		height: 46px;
+		padding-left: 12px;
+		padding-right: 12px;
+		margin-bottom: 14px;
+	}
+
+	.input-icon {
+		font-size: 14px;
+		color: #67C23A;
+		width: 44px;
+	}
+
+	.input-box {
+		flex: 1;
+		height: 46px;
+		font-size: 15px;
+		color: #303133;
+	}
+
+	.ph {
+		color: #C0C4CC;
+	}
+
+	.login-btn {
+		height: 46px;
+		border-radius: 23px;
+		align-items: center;
+		justify-content: center;
+		margin-top: 8px;
+	}
+
+	.login-btn-on {
+		background-color: #67C23A;
+	}
+
+	.login-btn-off {
+		background-color: #B8DFA4;
+	}
+
+	.login-btn-text {
+		color: #FFFFFF;
+		font-size: 16px;
+		font-weight: bold;
+	}
+
+	.form-foot {
+		flex-direction: row;
+		justify-content: flex-end;
+		margin-top: 14px;
+	}
+
+	.foot-link {
+		font-size: 13px;
+		color: #409EFF;
+	}
+
+	.server-tip {
+		align-items: center;
+		margin-top: 24px;
+	}
+
+	.server-tip-text {
+		font-size: 11px;
+		color: #909399;
+		margin-top: 2px;
+	}
+</style>

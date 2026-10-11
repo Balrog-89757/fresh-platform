@@ -1,0 +1,582 @@
+<template>
+	<view class="confirm-root">
+		<scroll-view class="confirm-scroll" direction="vertical" :show-scrollbar="false">
+			<!-- 收货地址 -->
+			<view class="addr-card" @click="chooseAddress">
+				<view v-if="hasAddress" class="addr-body">
+					<view class="row-start">
+						<text class="addr-name">{{ addrReceiver }}</text>
+						<text class="addr-phone">{{ addrPhone }}</text>
+					</view>
+					<text class="addr-detail">{{ addrAddress }}</text>
+				</view>
+				<view v-else class="addr-body">
+					<text class="addr-empty">＋ 点击添加收货地址</text>
+					<text class="addr-detail">填写收货地址后才能提交订单</text>
+				</view>
+				<text class="addr-arrow">›</text>
+			</view>
+
+			<!-- 商品清单 -->
+			<view class="card">
+				<view class="row-between">
+					<text class="block-title">商品清单</text>
+					<text class="fs-12 txt-sub">共 {{ totalCount }} 件</text>
+				</view>
+				<view class="divider mt-8" />
+				<view v-for="(it, i) in items" :key="i" class="goods-item">
+					<image class="goods-img" :src="it.image" mode="aspectFill" />
+					<view class="goods-info">
+						<text class="goods-name ellipsis-2">{{ it.name }}</text>
+						<view class="row-between mt-6">
+							<text class="goods-price">¥{{ money(it.price) }}</text>
+							<text class="goods-qty">× {{ it.quantity }}</text>
+						</view>
+						<text class="goods-stock">库存 {{ it.stock }} 件</text>
+					</view>
+				</view>
+				<view v-if="items.length == 0" class="loading-box">
+					<text class="txt-sub fs-13">没有待结算的商品</text>
+				</view>
+			</view>
+
+			<!-- 订单备注 -->
+			<view class="card">
+				<view class="row-between">
+					<text class="block-title">订单备注</text>
+					<text class="fs-12 txt-sub">选填</text>
+				</view>
+				<input class="remark-input" v-model="remark" placeholder="如：请放物业代收 / 需要分开包装" placeholder-class="ph" :maxlength="60" />
+			</view>
+
+			<!-- 金额明细 -->
+			<view class="card">
+				<view class="row-between">
+					<text class="fs-14 txt-sub">商品金额</text>
+					<text class="fs-14 txt-main">¥{{ money(goodsAmount) }}</text>
+				</view>
+				<view class="row-between mt-8">
+					<text class="fs-14 txt-sub">运费</text>
+					<text class="fs-14 txt-primary">免运费</text>
+				</view>
+				<view class="row-between mt-8">
+					<text class="fs-14 txt-sub">配送方式</text>
+					<text class="fs-14 txt-main">产地直发 · 冷链配送</text>
+				</view>
+				<view class="divider mt-10" />
+				<view class="row-between mt-10">
+					<text class="fs-15 txt-main bold">应付金额</text>
+					<text class="pay-amount">¥{{ money(goodsAmount) }}</text>
+				</view>
+			</view>
+
+			<view class="safe-bottom" />
+		</scroll-view>
+
+		<!-- 提交栏 -->
+		<view class="bottom-bar">
+			<view class="total-col">
+				<text class="total-label">合计：<text class="total-price">¥{{ money(goodsAmount) }}</text></text>
+				<text class="total-tip">共 {{ totalCount }} 件商品</text>
+			</view>
+			<view :class="canSubmit ? 'submit-btn' : 'submit-btn-off'" @click="submitOrder">
+				<text class="submit-text">{{ submitting ? '提交中...' : '提交订单' }}</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import {
+		apiAddressList, apiCartList, apiProductDetail,
+		apiCreateOrder, apiPayOrder, apiDeleteCartItem
+	} from '../../utils/api.uts'
+	import { getUserId, requireLogin, getStorageString, resolveImage } from '../../utils/config.uts'
+	import { money, salePrice } from '../../utils/util.uts'
+	import type { Address, CartItem, Product } from '../../utils/model.uts'
+
+	/** 结算商品行 */
+	type ConfirmItem = {
+		cartId : number
+		productId : number
+		name : string
+		image : string
+		price : number
+		quantity : number
+		stock : number
+	}
+
+	const items = ref([] as Array<ConfirmItem>)
+	const remark = ref('')
+	const fromCart = ref(false)
+	const submitting = ref(false)
+	const loading = ref(false)
+
+	/* 选中的收货地址（脚本内保存原始对象，模板只读下面这几个扁平字段，避免可空类型访问） */
+	let selectedAddress : Address | null = null
+	const hasAddress = ref(false)
+	const addrReceiver = ref('')
+	const addrPhone = ref('')
+	const addrAddress = ref('')
+
+	const totalCount = computed((): number => {
+		let sum = 0
+		items.value.forEach((it) => {
+			sum = sum + it.quantity
+		})
+		return sum
+	})
+
+	const goodsAmount = computed((): number => {
+		let sum = 0
+		items.value.forEach((it) => {
+			sum = sum + it.price * it.quantity
+		})
+		return sum
+	})
+
+	const canSubmit = computed((): boolean => {
+		return items.value.length > 0 && hasAddress.value && !submitting.value
+	})
+
+	onLoad((options : OnLoadOptions) => {
+		if (!requireLogin()) {
+			return
+		}
+		const from = options['fromCart'] as string | null
+		if (from != null && from == '1') {
+			fromCart.value = true
+			loadCartItems()
+		} else {
+			loadBuyNowItem(options)
+		}
+		loadAddress()
+	})
+
+	onShow(() => {
+		// 从地址页 / 新增地址页返回后应用选择结果
+		const picked = getStorageString('selectedAddressId')
+		if (picked.length > 0) {
+			uni.removeStorageSync('selectedAddressId')
+			applyAddressId(parseInt(picked))
+		}
+	})
+
+	/** 购物车结算：读取勾选的购物车项 */
+	async function loadCartItems() : Promise<void> {
+		loading.value = true
+		try {
+			const idsText = getStorageString('checkoutCartIds')
+			const idList = [] as Array<number>
+			if (idsText.length > 0) {
+				idsText.split(',').forEach((s) => {
+					const n = parseInt(s)
+					if (!isNaN(n) && n > 0) {
+						idList.push(n)
+					}
+				})
+			}
+			const cartList = await apiCartList(getUserId())
+			const result = [] as Array<ConfirmItem>
+			cartList.forEach((c : CartItem) => {
+				if (idList.length > 0 && idList.indexOf(c.id) < 0) {
+					return
+				}
+				const p = c.product
+				if (p == null) {
+					return
+				}
+				result.push({
+					cartId: c.id,
+					productId: p.id,
+					name: p.name,
+					image: resolveImage(p.imageUrl),
+					price: salePrice(p),
+					quantity: c.quantity,
+					stock: p.stock
+				} as ConfirmItem)
+			})
+			items.value = result
+		} catch (e) {
+			items.value = [] as Array<ConfirmItem>
+		} finally {
+			loading.value = false
+		}
+	}
+
+	/** 立即购买：读取商品与数量 */
+	async function loadBuyNowItem(options : OnLoadOptions) : Promise<void> {
+		const pidText = options['productId'] as string | null
+		if (pidText == null || pidText.length == 0) {
+			items.value = [] as Array<ConfirmItem>
+			return
+		}
+		const pid = parseInt(pidText)
+		const qtyText = options['quantity'] as string | null
+		let qty = 1
+		if (qtyText != null && qtyText.length > 0) {
+			const n = parseInt(qtyText)
+			if (!isNaN(n) && n > 0) {
+				qty = n
+			}
+		}
+		try {
+			const p = await apiProductDetail(pid)
+			if (p == null) {
+				items.value = [] as Array<ConfirmItem>
+				return
+			}
+			items.value = [{
+				cartId: 0,
+				productId: p.id,
+				name: p.name,
+				image: resolveImage(p.imageUrl),
+				price: salePrice(p),
+				quantity: qty,
+				stock: p.stock
+			} as ConfirmItem]
+		} catch (e) {
+			items.value = [] as Array<ConfirmItem>
+		}
+	}
+
+	/** 收货地址：默认选中第一个，或使用上一次选择的地址 */
+	async function loadAddress() : Promise<void> {
+		try {
+			const list = await apiAddressList(getUserId())
+			if (list.length == 0) {
+				setAddress(null)
+				return
+			}
+			const picked = getStorageString('selectedAddressId')
+			if (picked.length > 0) {
+				uni.removeStorageSync('selectedAddressId')
+				await applyAddressId(parseInt(picked))
+				if (hasAddress.value) {
+					return
+				}
+			}
+			setAddress(list[0])
+		} catch (e) {
+			setAddress(null)
+		}
+	}
+
+	async function applyAddressId(id : number) : Promise<void> {
+		if (id <= 0) {
+			return
+		}
+		try {
+			const list = await apiAddressList(getUserId())
+			let hit : Address | null = null
+			list.forEach((a : Address) => {
+				if (a.id == id) {
+					hit = a
+				}
+			})
+			const target = hit
+			if (target != null) {
+				setAddress(target)
+			}
+		} catch (e) {
+		}
+	}
+
+	/** 把地址对象拆成模板可读的扁平字段 */
+	function setAddress(a : Address | null) : void {
+		selectedAddress = a
+		if (a == null) {
+			hasAddress.value = false
+			addrReceiver.value = ''
+			addrPhone.value = ''
+			addrAddress.value = ''
+			return
+		}
+		const r = a.receiver
+		hasAddress.value = true
+		addrReceiver.value = (r == null || r.length == 0) ? '收货人未填写' : r
+		addrPhone.value = a.phone
+		addrAddress.value = a.address
+	}
+
+	function chooseAddress() : void {
+		uni.navigateTo({ url: '/pages/address/address-list?mode=select' })
+	}
+
+	/** 提交订单：与 Vue 端一致，每个商品创建一条订单记录 */
+	async function submitOrder() : Promise<void> {
+		if (submitting.value) {
+			return
+		}
+		const addr = selectedAddress
+		if (addr == null) {
+			uni.showToast({ title: '请先选择收货地址', icon: 'none' })
+			chooseAddress()
+			return
+		}
+		if (items.value.length == 0) {
+			uni.showToast({ title: '没有可结算的商品', icon: 'none' })
+			return
+		}
+		// 库存校验
+		let stockError = ''
+		items.value.forEach((it) => {
+			if (it.stock < it.quantity) {
+				stockError = it.name + ' 库存不足'
+			}
+		})
+		if (stockError.length > 0) {
+			uni.showToast({ title: stockError, icon: 'none' })
+			return
+		}
+
+		submitting.value = true
+		try {
+			const createdIds = [] as Array<number>
+			for (let i = 0; i < items.value.length; i++) {
+				const it = items.value[i]
+				const order = await apiCreateOrder(
+					getUserId(), it.productId, it.quantity, it.price,
+					addrReceiver.value, addr.phone, addr.address, remark.value.trim()
+				)
+				if (order != null) {
+					createdIds.push(order.id)
+				}
+			}
+
+			if (createdIds.length == 0) {
+				uni.showToast({ title: '下单失败，请重试', icon: 'none' })
+				return
+			}
+
+			// 下单成功后清理已结算的购物车项
+			if (fromCart.value) {
+				for (let j = 0; j < items.value.length; j++) {
+					const cartId = items.value[j].cartId
+					if (cartId > 0) {
+						try {
+							await apiDeleteCartItem(cartId)
+						} catch (e) {
+						}
+					}
+				}
+				uni.removeStorageSync('checkoutCartIds')
+			}
+
+			askToPay(createdIds, goodsAmount.value)
+		} catch (err) {
+			// 保留真实错误，便于排查（之前这里吞掉异常导致难以定位）
+			console.error('下单异常：', err)
+			uni.showToast({ title: '下单失败，请重试', icon: 'none' })
+		} finally {
+			submitting.value = false
+		}
+	}
+
+	/** 下单成功 → 询问是否立即支付（支付后商户即可发货） */
+	function askToPay(orderIds : Array<number>, amount : number) : void {
+		uni.showModal({
+			title: '下单成功',
+			content: '订单已提交给商家，应付 ¥' + money(amount) + '，是否立即支付？',
+			confirmText: '立即支付',
+			cancelText: '稍后支付',
+			success: (res) => {
+				if (res.confirm) {
+					payOrders(orderIds)
+				} else {
+					toOrderList()
+				}
+			}
+		})
+	}
+
+	async function payOrders(orderIds : Array<number>) : Promise<void> {
+		uni.showLoading({ title: '支付中...' })
+		let ok = 0
+		for (let i = 0; i < orderIds.length; i++) {
+			try {
+				await apiPayOrder(orderIds[i])
+				ok = ok + 1
+			} catch (e) {
+			}
+		}
+		uni.hideLoading()
+		if (ok == orderIds.length) {
+			uni.showToast({ title: '支付成功，等待商家发货', icon: 'success' })
+		} else {
+			uni.showToast({ title: '部分订单支付失败，请在订单列表重试', icon: 'none' })
+		}
+		setTimeout(() => {
+			toOrderList()
+		}, 900)
+	}
+
+	function toOrderList() : void {
+		// order-list 是 tabBar 页面，必须用 switchTab
+		uni.switchTab({ url: '/pages/order/order-list' })
+	}
+</script>
+
+<style>
+	.confirm-root {
+		flex: 1;
+		background-color: #F4F6F3;
+	}
+
+	.confirm-scroll {
+		flex: 1;
+		padding: 10px;
+	}
+
+	.addr-card {
+		flex-direction: row;
+		align-items: center;
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		padding: 14px 12px;
+		margin-bottom: 10px;
+	}
+
+	.addr-body {
+		flex: 1;
+	}
+
+	.addr-name {
+		font-size: 15px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.addr-phone {
+		font-size: 13px;
+		color: #606266;
+		margin-left: 10px;
+	}
+
+	.addr-detail {
+		font-size: 13px;
+		color: #606266;
+		margin-top: 6px;
+	}
+
+	.addr-empty {
+		font-size: 15px;
+		font-weight: bold;
+		color: #67C23A;
+	}
+
+	.addr-arrow {
+		font-size: 20px;
+		color: #C0C4CC;
+		margin-left: 8px;
+	}
+
+	.block-title {
+		font-size: 15px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.goods-item {
+		flex-direction: row;
+		padding-top: 10px;
+		padding-bottom: 10px;
+	}
+
+	.goods-img {
+		width: 72px;
+		height: 72px;
+		border-radius: 8px;
+		background-color: #F2F3F5;
+	}
+
+	.goods-info {
+		flex: 1;
+		margin-left: 10px;
+	}
+
+	.goods-name {
+		font-size: 14px;
+		color: #303133;
+	}
+
+	.goods-price {
+		font-size: 15px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.goods-qty {
+		font-size: 13px;
+		color: #909399;
+	}
+
+	.goods-stock {
+		font-size: 11px;
+		color: #C0C4CC;
+		margin-top: 4px;
+	}
+
+	.remark-input {
+		height: 38px;
+		font-size: 14px;
+		color: #303133;
+		margin-top: 8px;
+	}
+
+	.ph {
+		color: #C0C4CC;
+	}
+
+	.pay-amount {
+		font-size: 20px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.total-col {
+		flex: 1;
+	}
+
+	.total-label {
+		font-size: 13px;
+		color: #606266;
+	}
+
+	.total-price {
+		font-size: 18px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.total-tip {
+		font-size: 11px;
+		color: #C0C4CC;
+	}
+
+	.submit-btn {
+		height: 40px;
+		padding-left: 26px;
+		padding-right: 26px;
+		border-radius: 20px;
+		background-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.submit-btn-off {
+		height: 40px;
+		padding-left: 26px;
+		padding-right: 26px;
+		border-radius: 20px;
+		background-color: #C8C9CC;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.submit-text {
+		font-size: 15px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+</style>

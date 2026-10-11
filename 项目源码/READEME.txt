@@ -1,0 +1,10 @@
+管理员账户:Sadmin 123456
+商户账户:farmer 123456
+用户账户:user 123456
+
+打开方式：1.在idea中配置数据库信息，密码
+                2.在springboot\src\main\resources\application.properties配置中第45行配置deepseek的api key
+                3.通过idea ALT+F12打开终端运行vue   （1）npm install
+                                                                         （2）npm run serve
+  
+            

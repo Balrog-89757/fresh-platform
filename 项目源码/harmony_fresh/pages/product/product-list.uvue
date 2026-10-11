@@ -1,0 +1,398 @@
+<template>
+	<view class="list-root">
+		<!-- 搜索栏 -->
+		<view class="search-bar">
+			<view class="search-input-box">
+				<text class="search-icon">🔍</text>
+				<input class="search-input"
+					v-model="keyword"
+					:focus="autoFocus"
+					placeholder="搜索商品名称"
+					placeholder-class="ph"
+					confirm-type="search"
+					@confirm="doSearch" />
+			</view>
+			<text class="search-btn" @click="doSearch">搜索</text>
+		</view>
+
+		<!-- 排序 -->
+		<view class="sort-bar">
+			<view class="sort-item" v-for="(s, i) in sorts" :key="i" @click="changeSort(i)">
+				<text :class="i == sortIndex ? 'sort-text-on' : 'sort-text'">{{ s.label }}</text>
+				<text v-if="i > 0 && i == sortIndex" class="sort-arrow">{{ sortOrder == 'asc' ? '↑' : '↓' }}</text>
+			</view>
+		</view>
+
+		<!-- 已选筛选条件 -->
+		<view v-if="categoryName.length > 0 || keyword.length > 0" class="filter-tip">
+			<text class="filter-text">筛选：{{ categoryName.length > 0 ? categoryName : '' }}{{ keyword.length > 0 ? (' 关键词「' + keyword + '」') : '' }}</text>
+		</view>
+
+		<scroll-view class="list-scroll" direction="vertical" :show-scrollbar="false"
+			:lower-threshold="60" @scrolltolower="onLoadMore">
+			<!-- 商品网格 -->
+			<view class="p-grid">
+				<view class="p-card" v-for="(p, i) in products" :key="i" @click="goDetail(p.id)">
+					<image class="p-img" :src="productImage(p)" mode="aspectFill" />
+					<view class="p-body">
+						<text class="p-name ellipsis-2">{{ p.name }}</text>
+						<text class="p-origin ellipsis">{{ p.placeOfOrigin != null ? p.placeOfOrigin : '产地直发' }}</text>
+						<view class="p-foot">
+							<view class="p-price-col">
+								<text class="p-price">¥{{ money(salePrice(p)) }}</text>
+								<text v-if="hasDiscount(p)" class="p-old-price">¥{{ money(p.price) }}</text>
+							</view>
+							<view class="p-add" @click.stop="quickAdd(p)">
+								<text class="p-add-text">＋</text>
+							</view>
+						</view>
+						<text class="p-sale">已售 {{ p.salesCount != null ? p.salesCount : 0 }} · 库存 {{ p.stock }}</text>
+					</view>
+				</view>
+			</view>
+
+			<view v-if="loading" class="loading-box">
+				<text class="txt-sub fs-13">加载中...</text>
+			</view>
+			<view v-if="!loading && products.length == 0" class="empty-box">
+				<text class="empty-text">没有找到相关商品</text>
+				<view class="reset-btn" @click="reset">
+					<text class="reset-text">清空筛选条件</text>
+				</view>
+			</view>
+			<view v-if="!loading && products.length > 0 && finished" class="loading-box">
+				<text class="txt-light fs-12">— 共 {{ total }} 件商品 —</text>
+			</view>
+			<view class="safe-bottom" />
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiProductPage, apiAddCart } from '../../utils/api.uts'
+	import { getUserId, requireLogin } from '../../utils/config.uts'
+	import { money, salePrice, productImage, hasDiscount, refreshCartBadge } from '../../utils/util.uts'
+	import type { Product } from '../../utils/model.uts'
+
+	/** 排序项：sortField 与后端 ProductService 支持的字段一致 */
+	type SortItem = {
+		label : string
+		field : string
+		order : string
+	}
+
+	const sorts = [
+		{ label: '综合', field: '', order: '' } as SortItem,
+		{ label: '销量', field: 'salesCount', order: 'desc' } as SortItem,
+		{ label: '价格', field: 'price', order: 'asc' } as SortItem
+	]
+
+	const keyword = ref('')
+	const categoryId = ref(0)
+	const categoryName = ref('')
+	const sortIndex = ref(0)
+	const sortOrder = ref('asc')
+	const autoFocus = ref(false)
+
+	const products = ref([] as Array<Product>)
+	const pageNo = ref(1)
+	const pageSize = 10
+	const total = ref(0)
+	const loading = ref(false)
+	const finished = ref(false)
+
+	onLoad((options : OnLoadOptions) => {
+		const cid = options['categoryId'] as string | null
+		if (cid != null && cid.length > 0) {
+			categoryId.value = parseInt(cid)
+		}
+		const cname = options['categoryName'] as string | null
+		if (cname != null) {
+			categoryName.value = decodeURIComponent(cname)
+		}
+		const kw = options['keyword'] as string | null
+		if (kw != null) {
+			keyword.value = decodeURIComponent(kw)
+		}
+		const focus = options['focus'] as string | null
+		if (focus != null && focus == '1') {
+			autoFocus.value = true
+		}
+		loadProducts(true)
+	})
+
+	onReachBottom(() => {
+		loadProducts(false)
+	})
+
+	/** scroll-view 触底加载更多 */
+	function onLoadMore() : void {
+		loadProducts(false)
+	}
+
+	async function loadProducts(reset : boolean) : Promise<void> {
+		if (loading.value) {
+			return
+		}
+		if (!reset && finished.value) {
+			return
+		}
+		if (reset) {
+			pageNo.value = 1
+			finished.value = false
+		}
+		loading.value = true
+		try {
+			const item = sorts[sortIndex.value]
+			const pageData = await apiProductPage(pageNo.value, pageSize, categoryId.value,
+				keyword.value.trim(), 1, item.field, item.order, 0, 0)
+			const records = pageData.records
+			const list = records == null ? ([] as Array<Product>) : records
+			total.value = pageData.total
+			if (reset) {
+				products.value = list
+			} else {
+				products.value = products.value.concat(list)
+			}
+			if (list.length < pageSize || products.value.length >= total.value) {
+				finished.value = true
+			} else {
+				pageNo.value = pageNo.value + 1
+			}
+		} catch (e) {
+			finished.value = true
+		} finally {
+			loading.value = false
+		}
+	}
+
+	function doSearch() : void {
+		loadProducts(true)
+	}
+
+	function changeSort(index : number) : void {
+		if (index == sortIndex.value && index > 0) {
+			// 再次点击价格时切换升降序
+			sortOrder.value = sortOrder.value == 'asc' ? 'desc' : 'asc'
+		} else {
+			sortIndex.value = index
+			sortOrder.value = index == 0 ? '' : (index == 1 ? 'desc' : 'asc')
+		}
+		loadProducts(true)
+	}
+
+	function reset() : void {
+		keyword.value = ''
+		categoryId.value = 0
+		categoryName.value = ''
+		sortIndex.value = 0
+		loadProducts(true)
+	}
+
+	async function quickAdd(p : Product) : Promise<void> {
+		if (!requireLogin()) {
+			return
+		}
+		try {
+			await apiAddCart(getUserId(), p.id, 1)
+			uni.showToast({ title: '已加入购物车', icon: 'success' })
+			refreshCartBadge()
+		} catch (e) {
+		}
+	}
+
+	function goDetail(id : number) : void {
+		uni.navigateTo({ url: '/pages/product/product-detail?id=' + id })
+	}
+</script>
+
+<style>
+	.list-root {
+		flex: 1;
+		background-color: #F4F6F3;
+	}
+
+	.list-scroll {
+		flex: 1;
+	}
+
+	.reset-btn {
+		height: 34px;
+		padding-left: 20px;
+		padding-right: 20px;
+		border-radius: 17px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+		margin-top: 12px;
+	}
+
+	.reset-text {
+		font-size: 13px;
+		color: #67C23A;
+	}
+
+	.search-bar {
+		flex-direction: row;
+		align-items: center;
+		padding: 8px 12px;
+		background-color: #67C23A;
+	}
+
+	.search-input-box {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		height: 36px;
+		background-color: #FFFFFF;
+		border-radius: 18px;
+		padding-left: 12px;
+		padding-right: 12px;
+	}
+
+	.search-icon {
+		font-size: 13px;
+		margin-right: 6px;
+	}
+
+	.search-input {
+		flex: 1;
+		height: 36px;
+		font-size: 13px;
+		color: #303133;
+	}
+
+	.ph {
+		color: #C0C4CC;
+	}
+
+	.search-btn {
+		font-size: 14px;
+		color: #FFFFFF;
+		margin-left: 10px;
+	}
+
+	.sort-bar {
+		flex-direction: row;
+		align-items: center;
+		background-color: #FFFFFF;
+		padding: 10px 0;
+	}
+
+	.sort-item {
+		flex: 1;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.sort-text {
+		font-size: 13px;
+		color: #606266;
+	}
+
+	.sort-text-on {
+		font-size: 13px;
+		color: #67C23A;
+		font-weight: bold;
+	}
+
+	.sort-arrow {
+		font-size: 11px;
+		color: #67C23A;
+		margin-left: 2px;
+	}
+
+	.filter-tip {
+		padding: 8px 12px 0 12px;
+	}
+
+	.filter-text {
+		font-size: 12px;
+		color: #909399;
+	}
+
+	.p-grid {
+		flex-direction: row;
+		flex-wrap: wrap;
+		padding: 6px;
+	}
+
+	.p-card {
+		width: 50%;
+		padding: 4px;
+	}
+
+	.p-img {
+		width: 100%;
+		height: 150px;
+		background-color: #F2F3F5;
+		border-top-left-radius: 10px;
+		border-top-right-radius: 10px;
+	}
+
+	.p-body {
+		background-color: #FFFFFF;
+		border-bottom-left-radius: 10px;
+		border-bottom-right-radius: 10px;
+		padding: 8px;
+	}
+
+	.p-name {
+		font-size: 14px;
+		color: #303133;
+		height: 38px;
+	}
+
+	.p-origin {
+		font-size: 11px;
+		color: #909399;
+		margin-top: 2px;
+	}
+
+	.p-foot {
+		flex-direction: row;
+		align-items: flex-end;
+		justify-content: space-between;
+		margin-top: 6px;
+	}
+
+	.p-price-col {
+		flex: 1;
+	}
+
+	.p-price {
+		font-size: 17px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.p-old-price {
+		font-size: 11px;
+		color: #C0C4CC;
+		text-decoration-line: line-through;
+		margin-left: 4px;
+	}
+
+	.p-add {
+		width: 26px;
+		height: 26px;
+		border-radius: 13px;
+		background-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.p-add-text {
+		font-size: 15px;
+		color: #FFFFFF;
+	}
+
+	.p-sale {
+		font-size: 11px;
+		color: #C0C4CC;
+		margin-top: 4px;
+	}
+</style>

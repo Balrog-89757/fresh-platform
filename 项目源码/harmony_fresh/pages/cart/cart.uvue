@@ -1,0 +1,499 @@
+<template>
+	<view class="cart-root">
+		<!-- 顶部提示 -->
+		<view class="cart-head">
+			<text class="cart-head-title">购物车</text>
+			<text class="cart-head-tip">共 {{ rows.length }} 种商品</text>
+		</view>
+
+		<scroll-view class="cart-scroll" direction="vertical" :show-scrollbar="false">
+			<view v-if="!loading && rows.length == 0" class="empty-box">
+				<text class="empty-text">购物车还是空的</text>
+				<view class="go-shop-btn" @click="goShop">
+					<text class="go-shop-text">去逛逛</text>
+				</view>
+			</view>
+
+			<view v-for="(row, idx) in rows" :key="idx" class="cart-item">
+				<!-- 勾选框 -->
+				<view class="check-box" @click="toggleCheck(idx)">
+					<view :class="row.checked ? 'check-dot-on' : 'check-dot'">
+						<text v-if="row.checked" class="check-icon">✓</text>
+					</view>
+				</view>
+
+				<!-- 商品图 -->
+				<image class="item-img" :src="rowImage(row)" mode="aspectFill" @click="goDetail(row)" />
+
+				<!-- 商品信息 -->
+				<view class="item-info">
+					<text class="item-name ellipsis-2">{{ rowName(row) }}</text>
+					<text class="item-origin ellipsis">{{ rowOrigin(row) }}</text>
+					<view class="item-foot">
+						<text class="item-price">¥{{ money(rowPrice(row)) }}</text>
+						<view class="qty-ctrl">
+							<view class="qty-btn" @click="changeQty(idx, -1)">
+								<text class="qty-btn-text">－</text>
+							</view>
+							<text class="qty-num">{{ row.quantity }}</text>
+							<view class="qty-btn" @click="changeQty(idx, 1)">
+								<text class="qty-btn-text">＋</text>
+							</view>
+						</view>
+					</view>
+					<view class="item-bottom">
+						<text class="item-stock">库存 {{ rowStock(row) }} 件</text>
+						<text class="item-del" @click="removeItem(idx)">删除</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="safe-bottom" />
+		</scroll-view>
+
+		<!-- 结算栏 -->
+		<view v-if="rows.length > 0" class="bottom-bar">
+			<view class="all-check" @click="toggleAll">
+				<view :class="allChecked ? 'check-dot-on' : 'check-dot'">
+					<text v-if="allChecked" class="check-icon">✓</text>
+				</view>
+				<text class="all-check-text">全选</text>
+			</view>
+			<view class="total-col">
+				<text class="total-label">合计：<text class="total-price">¥{{ money(totalAmount) }}</text></text>
+				<text class="total-tip">已选 {{ totalCount }} 件，不含运费</text>
+			</view>
+			<view :class="canCheckout ? 'settle-btn' : 'settle-btn-off'" @click="goSettle">
+				<text class="settle-text">去结算({{ totalCount }})</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiCartList, apiUpdateCartQuantity, apiDeleteCartItem } from '../../utils/api.uts'
+	import { getUserId, requireLogin } from '../../utils/config.uts'
+	import { money, salePrice, productImage, refreshCartBadge } from '../../utils/util.uts'
+	import type { CartItem, Product } from '../../utils/model.uts'
+
+	/** 购物车行数据（在原 CartItem 上增加勾选状态，便于页面交互） */
+	type CartRow = {
+		id : number
+		productId : number
+		quantity : number
+		checked : boolean
+		product : Product | null
+	}
+
+	const rows = ref([] as Array<CartRow>)
+	const loading = ref(false)
+
+	const allChecked = computed((): boolean => {
+		if (rows.value.length == 0) {
+			return false
+		}
+		let all = true
+		rows.value.forEach((r) => {
+			if (!r.checked) {
+				all = false
+			}
+		})
+		return all
+	})
+
+	const totalCount = computed((): number => {
+		let sum = 0
+		rows.value.forEach((r) => {
+			if (r.checked) {
+				sum = sum + r.quantity
+			}
+		})
+		return sum
+	})
+
+	const totalAmount = computed((): number => {
+		let sum = 0
+		rows.value.forEach((r) => {
+			if (r.checked) {
+				sum = sum + rowPrice(r) * r.quantity
+			}
+		})
+		return sum
+	})
+
+	const canCheckout = computed((): boolean => {
+		return totalCount.value > 0
+	})
+
+	onShow(() => {
+		loadCart()
+	})
+
+	async function loadCart() : Promise<void> {
+		if (!requireLogin()) {
+			rows.value = [] as Array<CartRow>
+			return
+		}
+		loading.value = true
+		try {
+			const list = await apiCartList(getUserId())
+			const result = [] as Array<CartRow>
+			list.forEach((it : CartItem) => {
+				result.push({
+					id: it.id,
+					productId: it.productId,
+					quantity: it.quantity,
+					checked: true,
+					product: it.product
+				} as CartRow)
+			})
+			rows.value = result
+			refreshCartBadge()
+		} catch (e) {
+			rows.value = [] as Array<CartRow>
+		} finally {
+			loading.value = false
+		}
+	}
+
+	function toggleCheck(index : number) : void {
+		const row = rows.value[index]
+		row.checked = !row.checked
+		rows.value[index] = row
+	}
+
+	function toggleAll() : void {
+		const target = !allChecked.value
+		rows.value.forEach((r, i) => {
+			r.checked = target
+			rows.value[i] = r
+		})
+	}
+
+	async function changeQty(index : number, delta : number) : Promise<void> {
+		const row = rows.value[index]
+		const next = row.quantity + delta
+		if (next < 1) {
+			return
+		}
+		const stock = rowStock(row)
+		if (stock > 0 && next > stock) {
+			uni.showToast({ title: '超过库存数量', icon: 'none' })
+			return
+		}
+		try {
+			await apiUpdateCartQuantity(row.id, next)
+			row.quantity = next
+			rows.value[index] = row
+			refreshCartBadge()
+		} catch (e) {
+		}
+	}
+
+	function removeItem(index : number) : void {
+		const row = rows.value[index]
+		uni.showModal({
+			title: '提示',
+			content: '确定从购物车移除该商品吗？',
+			success: (res) => {
+				if (res.confirm) {
+					doRemove(index, row.id)
+				}
+			}
+		})
+	}
+
+	async function doRemove(index : number, cartId : number) : Promise<void> {
+		try {
+			await apiDeleteCartItem(cartId)
+			rows.value.splice(index, 1)
+			uni.showToast({ title: '已移除', icon: 'success' })
+			refreshCartBadge()
+		} catch (e) {
+		}
+	}
+
+	function goSettle() : void {
+		const ids = [] as Array<string>
+		rows.value.forEach((r) => {
+			if (r.checked) {
+				ids.push(r.id.toString())
+			}
+		})
+		if (ids.length == 0) {
+			uni.showToast({ title: '请选择要结算的商品', icon: 'none' })
+			return
+		}
+		uni.setStorageSync('checkoutCartIds', ids.join(','))
+		uni.navigateTo({ url: '/pages/order/order-confirm?fromCart=1' })
+	}
+
+	function goShop() : void {
+		uni.switchTab({ url: '/pages/index/index' })
+	}
+
+	function goDetail(row : CartRow) : void {
+		uni.navigateTo({ url: '/pages/product/product-detail?id=' + row.productId })
+	}
+
+	/* -------- 行数据展示辅助 -------- */
+
+	function rowName(row : CartRow) : string {
+		const p = row.product
+		if (p == null) {
+			return '商品 ' + row.productId
+		}
+		return p.name
+	}
+
+	function rowOrigin(row : CartRow) : string {
+		const p = row.product
+		if (p == null || p.placeOfOrigin == null || p.placeOfOrigin.length == 0) {
+			return '产地直发'
+		}
+		return p.placeOfOrigin
+	}
+
+	function rowPrice(row : CartRow) : number {
+		const p = row.product
+		if (p == null) {
+			return 0
+		}
+		return salePrice(p)
+	}
+
+	function rowStock(row : CartRow) : number {
+		const p = row.product
+		if (p == null) {
+			return 0
+		}
+		return p.stock
+	}
+
+	function rowImage(row : CartRow) : string {
+		return productImage(row.product)
+	}
+</script>
+
+<style>
+	.cart-root {
+		flex: 1;
+		background-color: #F4F6F3;
+	}
+
+	.cart-head {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px;
+		background-color: #FFFFFF;
+	}
+
+	.cart-head-title {
+		font-size: 17px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.cart-head-tip {
+		font-size: 12px;
+		color: #909399;
+	}
+
+	.cart-scroll {
+		flex: 1;
+		padding: 10px;
+	}
+
+	.cart-item {
+		flex-direction: row;
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		padding: 10px;
+		margin-bottom: 10px;
+	}
+
+	.check-box {
+		width: 32px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.check-dot {
+		width: 20px;
+		height: 20px;
+		border-radius: 10px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #DCDFE6;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.check-dot-on {
+		width: 20px;
+		height: 20px;
+		border-radius: 10px;
+		background-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.check-icon {
+		font-size: 12px;
+		color: #FFFFFF;
+	}
+
+	.item-img {
+		width: 84px;
+		height: 84px;
+		border-radius: 8px;
+		background-color: #F2F3F5;
+	}
+
+	.item-info {
+		flex: 1;
+		margin-left: 10px;
+	}
+
+	.item-name {
+		font-size: 14px;
+		color: #303133;
+	}
+
+	.item-origin {
+		font-size: 11px;
+		color: #909399;
+		margin-top: 2px;
+	}
+
+	.item-foot {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 6px;
+	}
+
+	.item-price {
+		font-size: 16px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.qty-ctrl {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.qty-btn {
+		width: 26px;
+		height: 26px;
+		border-radius: 6px;
+		background-color: #F2F3F5;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.qty-btn-text {
+		font-size: 14px;
+		color: #303133;
+	}
+
+	.qty-num {
+		width: 40px;
+		text-align: center;
+		font-size: 14px;
+		color: #303133;
+	}
+
+	.item-bottom {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		margin-top: 6px;
+	}
+
+	.item-stock {
+		font-size: 11px;
+		color: #C0C4CC;
+	}
+
+	.item-del {
+		font-size: 12px;
+		color: #F56C6C;
+	}
+
+	.go-shop-btn {
+		height: 38px;
+		padding-left: 26px;
+		padding-right: 26px;
+		border-radius: 19px;
+		background-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+		margin-top: 14px;
+	}
+
+	.go-shop-text {
+		font-size: 15px;
+		color: #FFFFFF;
+	}
+
+	.all-check {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.all-check-text {
+		font-size: 13px;
+		color: #606266;
+		margin-left: 6px;
+	}
+
+	.total-col {
+		flex: 1;
+		margin-left: 12px;
+	}
+
+	.total-label {
+		font-size: 13px;
+		color: #606266;
+	}
+
+	.total-price {
+		font-size: 18px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.total-tip {
+		font-size: 11px;
+		color: #C0C4CC;
+	}
+
+	.settle-btn {
+		height: 38px;
+		padding-left: 20px;
+		padding-right: 20px;
+		border-radius: 19px;
+		background-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.settle-btn-off {
+		height: 38px;
+		padding-left: 20px;
+		padding-right: 20px;
+		border-radius: 19px;
+		background-color: #C8C9CC;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.settle-text {
+		font-size: 15px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+</style>

@@ -1,0 +1,338 @@
+/* =========================================================================
+ * 农产品生鲜商城 —— 全局通用样式（由 App.uvue 引入，对所有页面生效）
+ * 说明：uni-app x / uvue 只支持类选择器（不支持标签、后代选择器），
+ *      因此所有样式都写成单一 class，多个 class 通过空格组合使用。
+ * ========================================================================= */
+
+/* ---------------------------- 页面容器 ---------------------------- */
+.page-root {
+	flex: 1;
+	background-color: #F4F6F3;
+}
+
+.page-scroll {
+	flex: 1;
+	background-color: #F4F6F3;
+}
+
+.page-pad {
+	padding: 10px;
+}
+
+.safe-bottom {
+	height: 12px;
+}
+
+/* ---------------------------- 布局 ---------------------------- */
+.row {
+	flex-direction: row;
+}
+
+.col {
+	flex-direction: column;
+}
+
+.row-between {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.row-center {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+.row-start {
+	flex-direction: row;
+	align-items: center;
+}
+
+.flex-1 {
+	flex: 1;
+}
+
+.wrap {
+	flex-wrap: wrap;
+}
+
+.mt-4 { margin-top: 4px; }
+.mt-6 { margin-top: 6px; }
+.mt-8 { margin-top: 8px; }
+.mt-10 { margin-top: 10px; }
+.mt-14 { margin-top: 14px; }
+.mt-20 { margin-top: 20px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-10 { margin-bottom: 10px; }
+.ml-6 { margin-left: 6px; }
+.ml-8 { margin-left: 8px; }
+.ml-10 { margin-left: 10px; }
+.mr-6 { margin-right: 6px; }
+.mr-8 { margin-right: 8px; }
+.mr-10 { margin-right: 10px; }
+
+/* ---------------------------- 卡片 ---------------------------- */
+.card {
+	background-color: #FFFFFF;
+	border-radius: 12px;
+	padding: 12px;
+	margin-bottom: 10px;
+}
+
+.card-flat {
+	background-color: #FFFFFF;
+	padding: 12px;
+	margin-bottom: 10px;
+}
+
+.section-head {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 12px 6px 12px;
+}
+
+.section-title {
+	font-size: 16px;
+	font-weight: bold;
+	color: #303133;
+}
+
+.section-more {
+	font-size: 13px;
+	color: #909399;
+}
+
+.divider {
+	height: 1px;
+	background-color: #EBEEF5;
+}
+
+/* ---------------------------- 文字 ---------------------------- */
+.txt-main { color: #303133; }
+.txt-sub { color: #909399; }
+.txt-light { color: #C0C4CC; }
+.txt-white { color: #FFFFFF; }
+.txt-primary { color: #67C23A; }
+.txt-price { color: #FF4D2D; font-weight: bold; }
+.txt-danger { color: #F56C6C; }
+.txt-line { text-decoration-line: line-through; }
+
+.bold { font-weight: bold; }
+.center { text-align: center; }
+.right { text-align: right; }
+
+.fs-11 { font-size: 11px; }
+.fs-12 { font-size: 12px; }
+.fs-13 { font-size: 13px; }
+.fs-14 { font-size: 14px; }
+.fs-15 { font-size: 15px; }
+.fs-16 { font-size: 16px; }
+.fs-18 { font-size: 18px; }
+.fs-20 { font-size: 20px; }
+.fs-24 { font-size: 24px; }
+
+.ellipsis {
+	lines: 1;
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+
+.ellipsis-2 {
+	lines: 2;
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+
+/* ---------------------------- 按钮 ---------------------------- */
+.btn-primary {
+	background-color: #67C23A;
+	color: #FFFFFF;
+	border-radius: 20px;
+	font-size: 15px;
+	height: 40px;
+	line-height: 40px;
+}
+
+.btn-plain {
+	background-color: #FFFFFF;
+	color: #67C23A;
+	border-width: 1px;
+	border-style: solid;
+	border-color: #67C23A;
+	border-radius: 20px;
+	font-size: 14px;
+	height: 34px;
+	line-height: 34px;
+}
+
+.btn-gray {
+	background-color: #F2F3F5;
+	color: #606266;
+	border-radius: 20px;
+	font-size: 14px;
+	height: 34px;
+	line-height: 34px;
+}
+
+.btn-warn {
+	background-color: #E6A23C;
+	color: #FFFFFF;
+	border-radius: 20px;
+	font-size: 14px;
+	height: 34px;
+	line-height: 34px;
+}
+
+.btn-danger {
+	background-color: #F56C6C;
+	color: #FFFFFF;
+	border-radius: 20px;
+	font-size: 14px;
+	height: 34px;
+	line-height: 34px;
+}
+
+.btn-disabled {
+	background-color: #C8C9CC;
+	color: #FFFFFF;
+	border-radius: 20px;
+	font-size: 15px;
+	height: 40px;
+	line-height: 40px;
+}
+
+/* ---------------------------- 标签 ---------------------------- */
+.tag {
+	border-radius: 10px;
+	padding: 2px 8px;
+	font-size: 11px;
+}
+
+.tag-green {
+	background-color: #EAF7E9;
+	color: #4E9E2E;
+}
+
+.tag-orange {
+	background-color: #FDF3E5;
+	color: #D98A22;
+}
+
+.tag-blue {
+	background-color: #EAF2FE;
+	color: #3A8EE6;
+}
+
+.tag-red {
+	background-color: #FDECEC;
+	color: #E45656;
+}
+
+.tag-gray {
+	background-color: #F2F3F5;
+	color: #909399;
+}
+
+/* ---------------------------- 空状态 / 加载 ---------------------------- */
+.empty-box {
+	flex: 1;
+	align-items: center;
+	justify-content: center;
+	padding: 60px 20px;
+}
+
+.empty-text {
+	font-size: 14px;
+	color: #909399;
+	margin-top: 10px;
+}
+
+.loading-box {
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+	padding: 20px;
+}
+
+/* ---------------------------- 底部结算条 ---------------------------- */
+.bottom-bar {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 14px;
+	background-color: #FFFFFF;
+	border-top-width: 1px;
+	border-top-style: solid;
+	border-top-color: #EBEEF5;
+}
+
+/* ---------------------------- 图片占位 ---------------------------- */
+.img-ph {
+	background-color: #F2F3F5;
+	border-radius: 8px;
+}
+
+/* ---------------------------- 输入框 ---------------------------- */
+.field {
+	flex-direction: row;
+	align-items: center;
+	background-color: #FFFFFF;
+	border-radius: 10px;
+	padding: 10px 12px;
+	margin-bottom: 10px;
+}
+
+.field-label {
+	width: 76px;
+	font-size: 14px;
+	color: #606266;
+}
+
+.field-input {
+	flex: 1;
+	height: 32px;
+	font-size: 14px;
+	color: #303133;
+}
+
+.field-textarea {
+	flex: 1;
+	height: 64px;
+	font-size: 14px;
+	color: #303133;
+}
+
+/* ---------------------------- 导航栏 ---------------------------- */
+.nav-bar {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	height: 44px;
+	padding: 0 12px;
+	background-color: #FFFFFF;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+	border-bottom-color: #EBEEF5;
+}
+
+.nav-back {
+	font-size: 14px;
+	color: #303133;
+	width: 60px;
+}
+
+.nav-title {
+	font-size: 16px;
+	font-weight: bold;
+	color: #303133;
+	text-align: center;
+}
+
+.nav-right {
+	font-size: 14px;
+	color: #67C23A;
+	width: 60px;
+	text-align: right;
+}

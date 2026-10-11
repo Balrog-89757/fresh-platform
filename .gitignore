@@ -1,0 +1,55 @@
+# ===== 工具与临时文件（本地上传辅助，不纳入版本库）=====
+.tools/
+.dsh-setup/
+.dsh-upload/
+
+# ===== Java / Maven 构建产物 =====
+# 注意：target/classes/application.properties 内含明文数据库密码与 API Key，严禁上传
+target/
+build/
+out/
+*.class
+*.jar
+*.war
+*.log
+
+# ===== 前端依赖与构建产物 =====
+node_modules/
+dist/
+unpackage/
+.code-review/
+
+# ===== 嵌套的独立 Git 仓库（vue 自带 .git，不作为子仓库提交）=====
+vue/.git/
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ===== 操作系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ===== 日志与临时 =====
+logs/
+*.tmp
+*.bak
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== 本地环境变量（请勿提交真实密钥）=====
+.env
+.env.local
+.env.*.local

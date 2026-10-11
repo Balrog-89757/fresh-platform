@@ -1,0 +1,499 @@
+<template>
+	<view class="detail-root">
+		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false">
+			<!-- 商品主图 -->
+			<image class="main-img" :src="mainImage" mode="aspectFill" />
+
+			<!-- 价格 / 名称 -->
+			<view class="info-card">
+				<view class="price-row">
+					<text class="price-now">¥{{ money(nowPrice) }}</text>
+					<text v-if="discountOn" class="price-old">¥{{ money(product.price) }}</text>
+					<view v-if="discountOn" class="tag tag-red ml-8">
+						<text class="fs-11 txt-danger">限时折扣</text>
+					</view>
+				</view>
+				<text class="p-name">{{ product.name }}</text>
+				<view class="meta-row">
+					<text class="meta-text">已售 {{ salesCount }} 件</text>
+					<text class="meta-dot">·</text>
+					<text class="meta-text">库存 {{ product.stock }} 件</text>
+					<text class="meta-dot">·</text>
+					<text class="meta-text">{{ originText }}</text>
+				</view>
+			</view>
+
+			<!-- 数量选择 -->
+			<view class="card">
+				<view class="row-between">
+					<text class="fs-15 txt-main">购买数量</text>
+					<view class="qty-ctrl">
+						<view class="qty-btn" @click="decrease">
+							<text class="qty-btn-text">－</text>
+						</view>
+						<text class="qty-num">{{ quantity }}</text>
+						<view class="qty-btn" @click="increase">
+							<text class="qty-btn-text">＋</text>
+						</view>
+					</view>
+				</view>
+				<text class="qty-tip">当前库存 {{ product.stock }} 件，最多可购买 {{ maxQuantity }} 件</text>
+			</view>
+
+			<!-- 商家 / 服务 -->
+			<view class="card">
+				<view class="row-between">
+					<text class="fs-14 txt-sub">供应商</text>
+					<text class="fs-14 txt-main">{{ merchantName }}</text>
+				</view>
+				<view class="divider mt-8" />
+				<view class="service-row">
+					<text class="service-tag">产地直发</text>
+					<text class="service-tag">新鲜采摘</text>
+					<text class="service-tag">48 小时发货</text>
+					<text class="service-tag">坏果包赔</text>
+				</view>
+			</view>
+
+			<!-- 商品详情 -->
+			<view class="card">
+				<text class="block-title">商品详情</text>
+				<view class="divider mb-10" />
+				<rich-text v-if="descHtml.length > 0" class="rich-box" :nodes="descHtml" />
+				<text v-else class="fs-13 txt-sub">暂无详细描述</text>
+			</view>
+
+			<!-- 用户评价 -->
+			<view class="card">
+				<view class="row-between">
+					<text class="block-title">用户评价</text>
+					<text class="fs-12 txt-sub">{{ reviews.length }} 条</text>
+				</view>
+				<view class="divider mb-10" />
+				<view v-if="reviews.length == 0">
+					<text class="fs-13 txt-sub">还没有评价，快来抢首评</text>
+				</view>
+				<view v-for="(r, i) in reviews" :key="i" class="review-item">
+					<view class="row-between">
+						<text class="fs-13 txt-main">{{ reviewerName(r) }}</text>
+						<text class="fs-12 txt-price">{{ stars(r.rating) }}</text>
+					</view>
+					<text class="fs-13 txt-sub mt-4">{{ r.content != null ? r.content : '此用户没有填写评价' }}</text>
+					<text class="fs-11 txt-light mt-4">{{ formatTime(r.createdAt) }}</text>
+				</view>
+			</view>
+
+			<view class="safe-bottom" />
+		</scroll-view>
+
+		<!-- 底部操作栏 -->
+		<view class="bottom-bar">
+			<view class="bar-icon" @click="goCart">
+				<text class="bar-icon-text">🛒</text>
+				<view v-if="cartCount > 0" class="bar-badge">
+					<text class="bar-badge-text">{{ cartBadgeText }}</text>
+				</view>
+			</view>
+			<view class="bar-btn bar-btn-cart" @click="addCart">
+				<text class="bar-btn-text">加入购物车</text>
+			</view>
+			<view class="bar-btn bar-btn-buy" @click="buyNow">
+				<text class="bar-btn-text">立即购买</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiProductDetail, apiProductReviews, apiAddCart, apiCartList } from '../../utils/api.uts'
+	import { resolveImage, getUserId, requireLogin, isLogin } from '../../utils/config.uts'
+	import { money, formatTime, refreshCartBadge } from '../../utils/util.uts'
+	import type { Product, Review } from '../../utils/model.uts'
+
+	const productId = ref(0)
+	const product = ref({} as Product)
+	const reviews = ref([] as Array<Review>)
+	const quantity = ref(1)
+	const descHtml = ref('')
+	const cartCount = ref(0)
+	const loaded = ref(false)
+
+	const mainImage = computed((): string => {
+		return resolveImage(product.value.imageUrl)
+	})
+
+	const discountOn = computed((): boolean => {
+		const p = product.value
+		return p.isDiscount != null && p.isDiscount == 1 && p.discountPrice != null && p.discountPrice > 0
+	})
+
+	const nowPrice = computed((): number => {
+		if (discountOn.value) {
+			const dp = product.value.discountPrice
+			return dp == null ? 0 : dp
+		}
+		return product.value.price
+	})
+
+	const salesCount = computed((): number => {
+		const s = product.value.salesCount
+		return s == null ? 0 : s
+	})
+
+	const originText = computed((): string => {
+		const o = product.value.placeOfOrigin
+		return (o == null || o.length == 0) ? '产地直销' : o
+	})
+
+	const merchantName = computed((): string => {
+		const m = product.value.merchant
+		if (m == null) {
+			return '平台自营'
+		}
+		const n = m.name
+		if (n == null || n.length == 0) {
+			return '平台自营'
+		}
+		return n
+	})
+
+	/** 最多可购买数量：库存与 99 取小 */
+	const maxQuantity = computed((): number => {
+		const stock = product.value.stock
+		if (stock <= 0) {
+			return 0
+		}
+		return stock > 99 ? 99 : stock
+	})
+
+	const cartBadgeText = computed((): string => {
+		return cartCount.value > 99 ? '99+' : cartCount.value.toString()
+	})
+
+	onLoad((options : OnLoadOptions) => {
+		const id = options['id'] as string | null
+		if (id != null && id.length > 0) {
+			productId.value = parseInt(id)
+		}
+		loadDetail()
+		loadReviews()
+	})
+
+	onShow(() => {
+		loadCartCount()
+	})
+
+	async function loadDetail() : Promise<void> {
+		if (productId.value <= 0) {
+			uni.showToast({ title: '商品参数错误', icon: 'none' })
+			return
+		}
+		try {
+			const p = await apiProductDetail(productId.value)
+			if (p != null) {
+				product.value = p
+				descHtml.value = prepareHtml(p.description)
+				loaded.value = true
+			}
+		} catch (e) {
+		}
+	}
+
+	async function loadReviews() : Promise<void> {
+		if (productId.value <= 0) {
+			return
+		}
+		try {
+			reviews.value = await apiProductReviews(productId.value, 10)
+		} catch (e) {
+			reviews.value = [] as Array<Review>
+		}
+	}
+
+	async function loadCartCount() : Promise<void> {
+		if (!isLogin()) {
+			cartCount.value = 0
+			return
+		}
+		try {
+			const list = await apiCartList(getUserId())
+			let sum = 0
+			list.forEach((it) => {
+				sum = sum + it.quantity
+			})
+			cartCount.value = sum
+		} catch (e) {
+			cartCount.value = 0
+		}
+	}
+
+	/** 富文本里的宽高写死会导致图片溢出，做一次简单处理 */
+	function prepareHtml(raw : string | null) : string {
+		if (raw == null || raw.length == 0) {
+			return ''
+		}
+		let html = raw
+		html = html.replace(/width\s*:\s*\d+(px|rpx)?/gi, 'width:100%')
+		html = html.replace(/<img/gi, '<img style="max-width:100%;height:auto;display:block;"')
+		return html
+	}
+
+	function increase() : void {
+		if (quantity.value >= maxQuantity.value) {
+			uni.showToast({ title: '已达到可购买上限', icon: 'none' })
+			return
+		}
+		quantity.value = quantity.value + 1
+	}
+
+	function decrease() : void {
+		if (quantity.value > 1) {
+			quantity.value = quantity.value - 1
+		}
+	}
+
+	async function addCart() : Promise<void> {
+		if (!requireLogin()) {
+			return
+		}
+		if (product.value.stock <= 0) {
+			uni.showToast({ title: '商品已售罄', icon: 'none' })
+			return
+		}
+		try {
+			await apiAddCart(getUserId(), productId.value, quantity.value)
+			uni.showToast({ title: '已加入购物车', icon: 'success' })
+			loadCartCount()
+			refreshCartBadge()
+		} catch (e) {
+		}
+	}
+
+	function buyNow() : void {
+		if (!requireLogin()) {
+			return
+		}
+		if (product.value.stock <= 0) {
+			uni.showToast({ title: '商品已售罄', icon: 'none' })
+			return
+		}
+		uni.navigateTo({
+			url: '/pages/order/order-confirm?productId=' + productId.value + '&quantity=' + quantity.value
+		})
+	}
+
+	function goCart() : void {
+		uni.switchTab({ url: '/pages/cart/cart' })
+	}
+
+	function reviewerName(r : Review) : string {
+		const u = r.user
+		if (u == null) {
+			return '匿名用户'
+		}
+		const n = u.name
+		if (n == null || n.length == 0) {
+			const un = u.username
+			return un == null ? '匿名用户' : un
+		}
+		return n
+	}
+
+	/** 评分转星号 */
+	function stars(rating : number) : string {
+		let s = ''
+		let i = 0
+		while (i < 5) {
+			s = s + (i < rating ? '★' : '☆')
+			i = i + 1
+		}
+		return s
+	}
+</script>
+
+<style>
+	.detail-root {
+		flex: 1;
+		background-color: #F4F6F3;
+	}
+
+	.detail-scroll {
+		flex: 1;
+	}
+
+	.main-img {
+		width: 100%;
+		height: 300px;
+		background-color: #F2F3F5;
+	}
+
+	.info-card {
+		background-color: #FFFFFF;
+		padding: 12px;
+		margin-bottom: 10px;
+	}
+
+	.price-row {
+		flex-direction: row;
+		align-items: flex-end;
+	}
+
+	.price-now {
+		font-size: 26px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.price-old {
+		font-size: 13px;
+		color: #C0C4CC;
+		text-decoration-line: line-through;
+		margin-left: 8px;
+		margin-bottom: 4px;
+	}
+
+	.p-name {
+		font-size: 17px;
+		font-weight: bold;
+		color: #303133;
+		margin-top: 8px;
+	}
+
+	.meta-row {
+		flex-direction: row;
+		align-items: center;
+		margin-top: 8px;
+	}
+
+	.meta-text {
+		font-size: 12px;
+		color: #909399;
+	}
+
+	.meta-dot {
+		font-size: 12px;
+		color: #DCDFE6;
+		margin-left: 6px;
+		margin-right: 6px;
+	}
+
+	.qty-ctrl {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.qty-btn {
+		width: 30px;
+		height: 30px;
+		border-radius: 6px;
+		background-color: #F2F3F5;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.qty-btn-text {
+		font-size: 16px;
+		color: #303133;
+	}
+
+	.qty-num {
+		width: 48px;
+		text-align: center;
+		font-size: 15px;
+		color: #303133;
+	}
+
+	.qty-tip {
+		font-size: 11px;
+		color: #C0C4CC;
+		margin-top: 10px;
+	}
+
+	.service-row {
+		flex-direction: row;
+		flex-wrap: wrap;
+		margin-top: 10px;
+	}
+
+	.service-tag {
+		font-size: 11px;
+		color: #67C23A;
+		background-color: #EAF7E9;
+		border-radius: 8px;
+		padding: 2px 8px;
+		margin-right: 8px;
+	}
+
+	.block-title {
+		font-size: 15px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.rich-box {
+		font-size: 13px;
+		color: #606266;
+	}
+
+	.review-item {
+		padding-top: 10px;
+		padding-bottom: 10px;
+		border-bottom-width: 1px;
+		border-bottom-style: solid;
+		border-bottom-color: #F2F3F5;
+	}
+
+	.bar-icon {
+		position: relative;
+		width: 44px;
+		height: 40px;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.bar-icon-text {
+		font-size: 20px;
+	}
+
+	.bar-badge {
+		position: absolute;
+		top: 0px;
+		right: 0px;
+		min-width: 16px;
+		height: 16px;
+		border-radius: 8px;
+		background-color: #FF4D2D;
+		align-items: center;
+		justify-content: center;
+		padding-left: 3px;
+		padding-right: 3px;
+	}
+
+	.bar-badge-text {
+		font-size: 10px;
+		color: #FFFFFF;
+	}
+
+	.bar-btn {
+		flex: 1;
+		height: 40px;
+		border-radius: 20px;
+		align-items: center;
+		justify-content: center;
+		margin-left: 8px;
+	}
+
+	.bar-btn-cart {
+		background-color: #FFB03A;
+	}
+
+	.bar-btn-buy {
+		background-color: #67C23A;
+	}
+
+	.bar-btn-text {
+		font-size: 15px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+</style>

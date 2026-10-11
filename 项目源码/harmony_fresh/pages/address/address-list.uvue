@@ -1,0 +1,215 @@
+<template>
+	<view class="addr-root">
+		<view class="addr-head">
+			<text class="addr-head-title">{{ selectMode ? '选择收货地址' : '我的收货地址' }}</text>
+			<text class="addr-head-tip">{{ list.length }} 个地址</text>
+		</view>
+
+		<scroll-view class="addr-scroll" direction="vertical" :show-scrollbar="false">
+			<view v-if="!loading && list.length == 0" class="empty-box">
+				<text class="empty-text">还没有收货地址</text>
+				<text class="empty-text">添加地址后才能下单哦</text>
+			</view>
+
+			<view v-for="(a, i) in list" :key="i" class="addr-item" @click="onItemTap(a)">
+				<view class="addr-main">
+					<view class="row-start">
+						<text class="addr-name">{{ receiverText(a) }}</text>
+						<text class="addr-phone">{{ a.phone }}</text>
+						<view v-if="i == 0" class="tag tag-green ml-6">
+							<text class="fs-11 txt-primary">默认</text>
+						</view>
+					</view>
+					<text class="addr-detail">{{ a.address }}</text>
+				</view>
+				<view class="addr-ops">
+					<text class="op-edit" @click.stop="goEdit(a.id)">编辑</text>
+					<text class="op-del" @click.stop="confirmDelete(a)">删除</text>
+				</view>
+			</view>
+
+			<view class="safe-bottom" />
+		</scroll-view>
+
+		<view class="bottom-bar">
+			<view class="add-btn" @click="goAdd">
+				<text class="add-btn-text">＋ 新增收货地址</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiAddressList, apiDeleteAddress } from '../../utils/api.uts'
+	import { getUserId, requireLogin } from '../../utils/config.uts'
+	import type { Address } from '../../utils/model.uts'
+
+	/** 选择模式：从确认订单页进入，点击地址后回传并返回 */
+	const selectMode = ref(false)
+	const list = ref([] as Array<Address>)
+	const loading = ref(false)
+
+	onLoad((options : OnLoadOptions) => {
+		const mode = options['mode'] as string | null
+		selectMode.value = (mode != null && mode == 'select')
+	})
+
+	onShow(() => {
+		loadList()
+	})
+
+	async function loadList() : Promise<void> {
+		if (!requireLogin()) {
+			return
+		}
+		loading.value = true
+		try {
+			list.value = await apiAddressList(getUserId())
+		} catch (e) {
+			list.value = [] as Array<Address>
+		} finally {
+			loading.value = false
+		}
+	}
+
+	function onItemTap(a : Address) : void {
+		if (selectMode.value) {
+			// 通过本地缓存回传给确认订单页（避免事件总线类型限制）
+			uni.setStorageSync('selectedAddressId', a.id.toString())
+			uni.navigateBack()
+		} else {
+			goEdit(a.id)
+		}
+	}
+
+	function goAdd() : void {
+		uni.navigateTo({ url: '/pages/address/address-edit?id=0' })
+	}
+
+	function goEdit(id : number) : void {
+		uni.navigateTo({ url: '/pages/address/address-edit?id=' + id })
+	}
+
+	function confirmDelete(a : Address) : void {
+		uni.showModal({
+			title: '删除地址',
+			content: '确定删除该收货地址吗？',
+			success: (res) => {
+				if (res.confirm) {
+					doDelete(a.id)
+				}
+			}
+		})
+	}
+
+	async function doDelete(id : number) : Promise<void> {
+		try {
+			await apiDeleteAddress(id)
+			uni.showToast({ title: '已删除', icon: 'success' })
+			loadList()
+		} catch (e) {
+		}
+	}
+
+	function receiverText(a : Address) : string {
+		const r = a.receiver
+		if (r == null || r.length == 0) {
+			return '未填写收货人'
+		}
+		return r
+	}
+</script>
+
+<style>
+	.addr-root {
+		flex: 1;
+		background-color: #F4F6F3;
+	}
+
+	.addr-head {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px;
+		background-color: #FFFFFF;
+	}
+
+	.addr-head-title {
+		font-size: 17px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.addr-head-tip {
+		font-size: 12px;
+		color: #909399;
+	}
+
+	.addr-scroll {
+		flex: 1;
+		padding: 10px;
+	}
+
+	.addr-item {
+		flex-direction: row;
+		align-items: center;
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		padding: 12px;
+		margin-bottom: 10px;
+	}
+
+	.addr-main {
+		flex: 1;
+	}
+
+	.addr-name {
+		font-size: 15px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.addr-phone {
+		font-size: 13px;
+		color: #606266;
+		margin-left: 10px;
+	}
+
+	.addr-detail {
+		font-size: 13px;
+		color: #606266;
+		margin-top: 6px;
+	}
+
+	.addr-ops {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.op-edit {
+		font-size: 13px;
+		color: #409EFF;
+		padding: 4px 8px;
+	}
+
+	.op-del {
+		font-size: 13px;
+		color: #F56C6C;
+		padding: 4px 8px;
+	}
+
+	.add-btn {
+		flex: 1;
+		height: 42px;
+		border-radius: 21px;
+		background-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.add-btn-text {
+		font-size: 15px;
+		color: #FFFFFF;
+		font-weight: bold;
+	}
+</style>

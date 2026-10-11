@@ -1,0 +1,154 @@
+/**
+ * 与后端实体一一对应的数据类型定义
+ * 后端实体：org.example.springboot.entity.*
+ *
+ * 注意：后端开启了 spring.jackson.default-property-inclusion=non_empty，
+ * 值为 null / 空字符串的字段会被直接省略，因此可空字段统一声明为可空类型。
+ */
+
+/** user 表 */
+export type UserInfo = {
+	id : number
+	username : string | null
+	name : string | null
+	role : string | null
+	email : string | null
+	status : number | null
+	token : string | null
+}
+
+/** category 表 */
+export type Category = {
+	id : number
+	name : string
+	icon : string | null
+	description : string | null
+	productCount : number | null
+}
+
+/** product 表 */
+export type Product = {
+	id : number
+	name : string
+	description : string | null
+	price : number
+	stock : number
+	isDiscount : number | null
+	discountPrice : number | null
+	categoryId : number | null
+	imageUrl : string | null
+	salesCount : number | null
+	merchantId : number | null
+	status : number | null
+	placeOfOrigin : string | null
+	merchant : UserInfo | null
+}
+
+/** carousel_item 表（首页轮播） */
+export type CarouselItem = {
+	id : number
+	imageUrl : string | null
+	tag : string | null
+	title : string | null
+	description : string | null
+	productId : number | null
+	sortOrder : number | null
+	status : number | null
+}
+
+/** cart 表（后端会填充 product / user 关联对象） */
+export type CartItem = {
+	id : number
+	userId : number
+	productId : number
+	quantity : number
+	createdAt : string | null
+	updatedAt : string | null
+	product : Product | null
+}
+
+/** address 表 */
+export type Address = {
+	id : number
+	userId : number
+	phone : string
+	address : string
+	receiver : string | null
+}
+
+/** order 表（后端会填充 product / merchant / user 关联对象） */
+export type OrderInfo = {
+	id : number
+	userId : number
+	totalPrice : number
+	status : number
+	lastStatus : number | null
+	remark : string | null
+	refundReason : string | null
+	refundStatus : number | null
+	recvAddress : string | null
+	recvPhone : string | null
+	recvName : string | null
+	productId : number
+	quantity : number
+	price : number
+	createdAt : string | null
+	updatedAt : string | null
+	product : Product | null
+	merchant : UserInfo | null
+}
+
+/** logistics 表 */
+export type Logistics = {
+	id : number
+	orderId : number
+	receiverName : string | null
+	receiverPhone : string | null
+	receiverAddress : string | null
+	companyName : string | null
+	trackingNumber : string | null
+	expectedArrivalTime : string | null
+	status : number | null
+	createdAt : string | null
+	updatedAt : string | null
+}
+
+/** review 表 */
+export type Review = {
+	id : number
+	userId : number
+	productId : number
+	rating : number
+	content : string | null
+	status : number | null
+	createdAt : string | null
+	user : UserInfo | null
+}
+
+/** MyBatis-Plus 分页结构 */
+export type ProductPage = {
+	records : Array<Product> | null
+	total : number
+	current : number
+	size : number
+}
+
+export type CartPage = {
+	records : Array<CartItem> | null
+	total : number
+}
+
+export type AddressPage = {
+	records : Array<Address> | null
+	total : number
+}
+
+export type OrderPage = {
+	records : Array<OrderInfo> | null
+	total : number
+}
+
+export type ReviewPage = {
+	records : Array<Review> | null
+	total : number
+}

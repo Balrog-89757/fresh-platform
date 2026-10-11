@@ -1,0 +1,175 @@
+<template>
+	<view class="reg-root">
+		<view class="reg-card">
+			<text class="reg-title">注册新账号</text>
+			<text class="reg-sub">注册成功后即可选购新鲜农产品</text>
+
+			<view class="field-item">
+				<text class="field-name">用户名</text>
+				<input class="field-value" v-model="username" placeholder="4-20 位字母或数字" placeholder-class="ph" :maxlength="20" />
+			</view>
+
+			<view class="field-item">
+				<text class="field-name">昵称</text>
+				<input class="field-value" v-model="name" placeholder="请输入昵称" placeholder-class="ph" :maxlength="20" />
+			</view>
+
+			<view class="field-item">
+				<text class="field-name">邮箱</text>
+				<input class="field-value" v-model="email" placeholder="用于找回密码" placeholder-class="ph" :maxlength="50" />
+			</view>
+
+			<view class="field-item">
+				<text class="field-name">密码</text>
+				<input class="field-value" v-model="password" :password="true" placeholder="请输入密码" placeholder-class="ph" :maxlength="30" />
+			</view>
+
+			<view class="field-item">
+				<text class="field-name">确认密码</text>
+				<input class="field-value" v-model="password2" :password="true" placeholder="请再次输入密码" placeholder-class="ph" :maxlength="30" />
+			</view>
+
+			<view class="submit-btn" @click="handleRegister">
+				<text class="submit-text">{{ loading ? '提交中...' : '立 即 注 册' }}</text>
+			</view>
+
+			<view class="back-line" @click="goLogin">
+				<text class="back-text">已有账号？返回登录</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiRegister } from '../../utils/api.uts'
+
+	const username = ref('')
+	const name = ref('')
+	const email = ref('')
+	const password = ref('')
+	const password2 = ref('')
+	const loading = ref(false)
+
+	async function handleRegister() : Promise<void> {
+		if (loading.value) {
+			return
+		}
+		if (username.value.trim().length < 4) {
+			uni.showToast({ title: '用户名至少 4 位', icon: 'none' })
+			return
+		}
+		if (name.value.trim().length == 0) {
+			uni.showToast({ title: '请输入昵称', icon: 'none' })
+			return
+		}
+		if (email.value.trim().length == 0) {
+			uni.showToast({ title: '请输入邮箱', icon: 'none' })
+			return
+		}
+		if (password.value.length < 6) {
+			uni.showToast({ title: '密码至少 6 位', icon: 'none' })
+			return
+		}
+		if (password.value != password2.value) {
+			uni.showToast({ title: '两次输入的密码不一致', icon: 'none' })
+			return
+		}
+
+		loading.value = true
+		try {
+			await apiRegister(username.value.trim(), password.value, name.value.trim(), email.value.trim())
+			uni.showToast({ title: '注册成功，请登录', icon: 'success' })
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 900)
+		} catch (e) {
+			// 错误提示已在 request.uts 统一处理
+		} finally {
+			loading.value = false
+		}
+	}
+
+	function goLogin() : void {
+		uni.navigateBack()
+	}
+</script>
+
+<style>
+	.reg-root {
+		flex: 1;
+		background-color: #F4F6F3;
+		padding: 16px;
+	}
+
+	.reg-card {
+		background-color: #FFFFFF;
+		border-radius: 14px;
+		padding: 18px 14px;
+	}
+
+	.reg-title {
+		font-size: 20px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.reg-sub {
+		font-size: 12px;
+		color: #909399;
+		margin-top: 6px;
+		margin-bottom: 16px;
+	}
+
+	.field-item {
+		flex-direction: row;
+		align-items: center;
+		background-color: #F7F8FA;
+		border-radius: 10px;
+		height: 46px;
+		padding-left: 12px;
+		padding-right: 12px;
+		margin-bottom: 12px;
+	}
+
+	.field-name {
+		width: 72px;
+		font-size: 14px;
+		color: #606266;
+	}
+
+	.field-value {
+		flex: 1;
+		height: 46px;
+		font-size: 14px;
+		color: #303133;
+	}
+
+	.ph {
+		color: #C0C4CC;
+	}
+
+	.submit-btn {
+		height: 46px;
+		border-radius: 23px;
+		background-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+		margin-top: 8px;
+	}
+
+	.submit-text {
+		color: #FFFFFF;
+		font-size: 16px;
+		font-weight: bold;
+	}
+
+	.back-line {
+		align-items: center;
+		margin-top: 16px;
+	}
+
+	.back-text {
+		font-size: 13px;
+		color: #409EFF;
+	}
+</style>

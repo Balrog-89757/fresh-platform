@@ -1,0 +1,383 @@
+<template>
+	<view class="user-root">
+		<!-- 用户信息 -->
+		<view class="user-head">
+			<view class="avatar">
+				<text class="avatar-text">{{ avatarText }}</text>
+			</view>
+			<view class="user-info">
+				<text class="user-name">{{ displayName }}</text>
+				<text class="user-sub">{{ subTitle }}</text>
+			</view>
+		</view>
+
+		<scroll-view class="user-scroll" direction="vertical" :show-scrollbar="false">
+			<!-- 订单统计 -->
+			<view class="stat-card">
+				<view class="row-between" @click="goOrders(-1)">
+					<text class="stat-title">我的订单</text>
+					<text class="stat-more">全部订单 ›</text>
+				</view>
+				<view class="stat-row">
+					<view class="stat-item" @click="goOrders(1)">
+						<text class="stat-num">{{ statWaitPay }}</text>
+						<text class="stat-label">待付款</text>
+					</view>
+					<view class="stat-item" @click="goOrders(2)">
+						<text class="stat-num">{{ statWaitSend }}</text>
+						<text class="stat-label">待发货</text>
+					</view>
+					<view class="stat-item" @click="goOrders(3)">
+						<text class="stat-num">{{ statWaitRecv }}</text>
+						<text class="stat-label">待收货</text>
+					</view>
+					<view class="stat-item" @click="goOrders(4)">
+						<text class="stat-num">{{ statDone }}</text>
+						<text class="stat-label">已完成</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 购物流程说明 -->
+			<view class="card">
+				<text class="block-title">购物流程</text>
+				<view class="divider mt-8" />
+				<view class="step-row">
+					<text class="step-text">1. 首页浏览 / 搜索商品</text>
+					<text class="step-text">2. 商品详情加入购物车</text>
+					<text class="step-text">3. 购物车勾选 → 去结算</text>
+					<text class="step-text">4. 确认订单：选择收货地址</text>
+					<text class="step-text">5. 提交订单并支付</text>
+					<text class="step-text">6. 商户后台收到订单后发货，可在订单详情查看物流</text>
+				</view>
+			</view>
+
+			<!-- 功能入口 -->
+			<view class="menu-card">
+				<view class="menu-item" @click="goAddress">
+					<text class="menu-name">收货地址管理</text>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-item" @click="goCart">
+					<text class="menu-name">我的购物车</text>
+					<text class="menu-arrow">›</text>
+				</view>
+				<view class="menu-item" @click="editServer">
+					<text class="menu-name">后端服务器地址</text>
+					<text class="menu-value">{{ baseUrl }}</text>
+				</view>
+				<view class="menu-item" @click="showAbout">
+					<text class="menu-name">关于本商城</text>
+					<text class="menu-arrow">›</text>
+				</view>
+			</view>
+
+			<view class="logout-btn" @click="logout">
+				<text class="logout-text">退出登录</text>
+			</view>
+
+			<view class="safe-bottom" />
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiOrderPage } from '../../utils/api.uts'
+	import {
+		getUserId, getUserName, getUserRole, getBaseUrl, setBaseUrl,
+		clearLogin, isLogin, requireLogin
+	} from '../../utils/config.uts'
+	import { refreshCartBadge } from '../../utils/util.uts'
+	import type { OrderInfo } from '../../utils/model.uts'
+
+	const displayName = ref('未登录')
+	const roleText = ref('')
+	const baseUrl = ref(getBaseUrl())
+
+	const statWaitPay = ref(0)
+	const statWaitSend = ref(0)
+	const statWaitRecv = ref(0)
+	const statDone = ref(0)
+
+	const avatarText = computed((): string => {
+		const n = displayName.value
+		if (n.length == 0 || n == '未登录') {
+			return '客'
+		}
+		return n.substring(0, 1)
+	})
+
+	const subTitle = computed((): string => {
+		if (!isLogin()) {
+			return '点击登录后即可下单购买'
+		}
+		return '账号：' + getUserName() + ' · ' + roleText.value
+	})
+
+	onShow(() => {
+		baseUrl.value = getBaseUrl()
+		if (!isLogin()) {
+			displayName.value = '未登录'
+			clearStats()
+			return
+		}
+		displayName.value = getUserName()
+		const role = getUserRole()
+		roleText.value = (role == 'USER') ? '普通会员' : role
+		loadStats()
+	})
+
+	async function loadStats() : Promise<void> {
+		if (!isLogin()) {
+			clearStats()
+			return
+		}
+		try {
+			const list = await apiOrderPage(getUserId(), '', 1, 200)
+			let waitPay = 0
+			let waitSend = 0
+			let waitRecv = 0
+			let done = 0
+			list.forEach((o : OrderInfo) => {
+				if (o.status == 0) waitPay = waitPay + 1
+				if (o.status == 1) waitSend = waitSend + 1
+				if (o.status == 2) waitRecv = waitRecv + 1
+				if (o.status == 3) done = done + 1
+			})
+			statWaitPay.value = waitPay
+			statWaitSend.value = waitSend
+			statWaitRecv.value = waitRecv
+			statDone.value = done
+		} catch (e) {
+			clearStats()
+		}
+	}
+
+	function clearStats() : void {
+		statWaitPay.value = 0
+		statWaitSend.value = 0
+		statWaitRecv.value = 0
+		statDone.value = 0
+	}
+
+	/** tab：0全部 1待付款 2待发货 3待收货 4已完成 */
+	function goOrders(tab : number) : void {
+		if (!requireLogin()) {
+			return
+		}
+		uni.setStorageSync('orderTab', (tab < 0 ? 0 : tab).toString())
+		uni.switchTab({ url: '/pages/order/order-list' })
+	}
+
+	function goAddress() : void {
+		if (!requireLogin()) {
+			return
+		}
+		uni.navigateTo({ url: '/pages/address/address-list' })
+	}
+
+	function goCart() : void {
+		uni.switchTab({ url: '/pages/cart/cart' })
+	}
+
+	function editServer() : void {
+		uni.showModal({
+			title: '后端服务器地址',
+			content: baseUrl.value,
+			editable: true,
+			placeholderText: 'http://192.168.x.x:1234',
+			success: (res) => {
+				if (res.confirm) {
+					const input = res.content
+					if (input != null && input.trim().length > 0) {
+						setBaseUrl(input)
+						baseUrl.value = getBaseUrl()
+						uni.showToast({ title: '已保存，重新登录后生效', icon: 'none' })
+					}
+				}
+			}
+		})
+	}
+
+	function showAbout() : void {
+		uni.showModal({
+			title: '关于本商城',
+			content: '农产品生鲜销售系统（uni-app x 客户端）\n后端：SpringBoot + MyBatis-Plus\n数据：MySQL db_aps\n支持浏览、购物车、下单支付、订单与物流查询',
+			showCancel: false,
+			confirmText: '知道了'
+		})
+	}
+
+	function logout() : void {
+		uni.showModal({
+			title: '退出登录',
+			content: '确定要退出当前账号吗？',
+			success: (res) => {
+				if (res.confirm) {
+					clearLogin()
+					refreshCartBadge()
+					displayName.value = '未登录'
+					clearStats()
+					uni.showToast({ title: '已退出登录', icon: 'none' })
+					setTimeout(() => {
+						uni.reLaunch({ url: '/pages/login/login' })
+					}, 600)
+				}
+			}
+		})
+	}
+</script>
+
+<style>
+	.user-root {
+		flex: 1;
+		background-color: #F4F6F3;
+	}
+
+	.user-head {
+		flex-direction: row;
+		align-items: center;
+		padding: 20px 16px;
+		background-image: linear-gradient(to right, #67C23A, #8FD46B);
+	}
+
+	.avatar {
+		width: 58px;
+		height: 58px;
+		border-radius: 29px;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.avatar-text {
+		font-size: 24px;
+		font-weight: bold;
+		color: #67C23A;
+	}
+
+	.user-info {
+		flex: 1;
+		margin-left: 14px;
+	}
+
+	.user-name {
+		font-size: 19px;
+		font-weight: bold;
+		color: #FFFFFF;
+	}
+
+	.user-sub {
+		font-size: 12px;
+		color: #F0FBEA;
+		margin-top: 6px;
+	}
+
+	.user-scroll {
+		flex: 1;
+		padding: 10px;
+	}
+
+	.stat-card {
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		padding: 12px;
+		margin-bottom: 10px;
+	}
+
+	.stat-title {
+		font-size: 16px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.stat-more {
+		font-size: 12px;
+		color: #909399;
+	}
+
+	.stat-row {
+		flex-direction: row;
+		margin-top: 14px;
+	}
+
+	.stat-item {
+		flex: 1;
+		align-items: center;
+	}
+
+	.stat-num {
+		font-size: 19px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.stat-label {
+		font-size: 12px;
+		color: #606266;
+		margin-top: 4px;
+	}
+
+	.block-title {
+		font-size: 15px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.step-row {
+		margin-top: 8px;
+	}
+
+	.step-text {
+		font-size: 12px;
+		color: #606266;
+		margin-top: 6px;
+	}
+
+	.menu-card {
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		padding-left: 12px;
+		padding-right: 12px;
+		margin-top: 10px;
+	}
+
+	.menu-item {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		height: 48px;
+		border-bottom-width: 1px;
+		border-bottom-style: solid;
+		border-bottom-color: #F2F3F5;
+	}
+
+	.menu-name {
+		font-size: 14px;
+		color: #303133;
+	}
+
+	.menu-value {
+		font-size: 12px;
+		color: #909399;
+	}
+
+	.menu-arrow {
+		font-size: 18px;
+		color: #C0C4CC;
+	}
+
+	.logout-btn {
+		height: 44px;
+		border-radius: 22px;
+		background-color: #FFFFFF;
+		align-items: center;
+		justify-content: center;
+		margin-top: 16px;
+	}
+
+	.logout-text {
+		font-size: 15px;
+		color: #F56C6C;
+	}
+</style>

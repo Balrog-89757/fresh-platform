@@ -1,0 +1,541 @@
+﻿<template>
+	<view class="detail-root">
+		<scroll-view class="detail-scroll" direction="vertical" :show-scrollbar="false">
+			<!-- 状态头 -->
+			<view class="status-head">
+				<text class="status-title">{{ statusText }}</text>
+				<text class="status-desc">{{ statusDesc }}</text>
+			</view>
+
+			<!-- 物流信息 -->
+			<view v-if="hasLogistics" class="card">
+				<view class="row-between">
+					<text class="block-title">物流信息</text>
+					<text class="fs-12 txt-primary">{{ lgStatusText }}</text>
+				</view>
+				<view class="divider mt-8" />
+				<view class="row-between mt-10">
+					<text class="fs-13 txt-sub">承运公司</text>
+					<text class="fs-13 txt-main">{{ lgCompany }}</text>
+				</view>
+				<view class="row-between mt-8">
+					<text class="fs-13 txt-sub">运单号</text>
+					<text class="fs-13 txt-main">{{ lgTracking }}</text>
+				</view>
+				<view class="row-between mt-8">
+					<text class="fs-13 txt-sub">预计送达</text>
+					<text class="fs-13 txt-main">{{ lgExpected }}</text>
+				</view>
+				<view class="row-between mt-8">
+					<text class="fs-13 txt-sub">更新时间</text>
+					<text class="fs-13 txt-main">{{ lgUpdated }}</text>
+				</view>
+			</view>
+
+			<!-- 待发货提示 -->
+			<view v-else-if="order.status == 1" class="card">
+				<text class="block-title">等待商家发货</text>
+				<text class="fs-12 txt-sub mt-6">订单已支付成功，商家正在备货中，发货后可在此查看物流单号</text>
+			</view>
+
+			<!-- 收货信息 -->
+			<view class="card">
+				<text class="block-title">收货信息</text>
+				<view class="divider mt-8" />
+				<view class="info-line">
+					<text class="info-label">收货人</text>
+					<text class="info-value">{{ recvNameText }}</text>
+				</view>
+				<view class="info-line">
+					<text class="info-label">联系电话</text>
+					<text class="info-value">{{ recvPhoneText }}</text>
+				</view>
+				<view class="info-line">
+					<text class="info-label">收货地址</text>
+					<text class="info-value">{{ recvAddressText }}</text>
+				</view>
+				<view v-if="order.status == 1 || order.status == 0" class="edit-addr" @click="changeAddress">
+					<text class="edit-addr-text">修改收货信息</text>
+				</view>
+			</view>
+
+			<!-- 商品信息 -->
+			<view class="card">
+				<view class="row-between">
+					<text class="block-title">商品信息</text>
+					<text class="fs-12 txt-sub">{{ merchantText }}</text>
+				</view>
+				<view class="divider mt-8" />
+				<view class="goods-row" @click="goProduct">
+					<image class="goods-img" :src="goodsImage" mode="aspectFill" />
+					<view class="goods-info">
+						<text class="goods-name ellipsis-2">{{ goodsName }}</text>
+						<view class="row-between mt-6">
+							<text class="goods-price">¥{{ money(goodsPrice) }}</text>
+							<text class="goods-qty">× {{ order.quantity }}</text>
+						</view>
+						<text class="fs-11 txt-light mt-4">小计 ¥{{ money(order.totalPrice) }}</text>
+					</view>
+				</view>
+			</view>
+
+			<!-- 金额 -->
+			<view class="card">
+				<view class="row-between">
+					<text class="fs-13 txt-sub">商品金额</text>
+					<text class="fs-13 txt-main">¥{{ money(order.totalPrice) }}</text>
+				</view>
+				<view class="row-between mt-8">
+					<text class="fs-13 txt-sub">运费</text>
+					<text class="fs-13 txt-primary">免运费</text>
+				</view>
+				<view class="divider mt-10" />
+				<view class="row-between mt-10">
+					<text class="fs-15 txt-main bold">实付金额</text>
+					<text class="pay-amount">¥{{ money(order.totalPrice) }}</text>
+				</view>
+			</view>
+
+			<!-- 订单信息 -->
+			<view class="card">
+				<view class="info-line">
+					<text class="info-label">订单编号</text>
+					<text class="info-value">{{ order.id }}</text>
+				</view>
+				<view class="info-line">
+					<text class="info-label">下单时间</text>
+					<text class="info-value">{{ formatTime(order.createdAt) }}</text>
+				</view>
+				<view class="info-line">
+					<text class="info-label">订单状态</text>
+					<text class="info-value">{{ statusText }}</text>
+				</view>
+				<view class="info-line">
+					<text class="info-label">订单备注</text>
+					<text class="info-value">{{ remarkText }}</text>
+				</view>
+				<view v-if="refundText.length > 0" class="info-line">
+					<text class="info-label">退款原因</text>
+					<text class="info-value">{{ refundText }}</text>
+				</view>
+			</view>
+
+			<view class="safe-bottom" />
+		</scroll-view>
+
+		<!-- 底部操作 -->
+		<view class="bottom-bar">
+			<view class="act-btn act-plain" @click="refreshAll">
+				<text class="act-text-plain">刷新</text>
+			</view>
+			<view v-if="order.status >= 2 && order.status != 4" class="act-btn act-plain" @click="loadLogistics">
+				<text class="act-text-plain">查看物流</text>
+			</view>
+			<view v-if="order.status == 0" class="act-btn act-plain" @click="cancelOrder">
+				<text class="act-text-plain">取消订单</text>
+			</view>
+			<view v-if="order.status == 2" class="act-btn act-warn" @click="confirmReceive">
+				<text class="act-text-white">确认收货</text>
+			</view>
+			<view v-if="order.status == 0" class="act-btn act-primary" @click="payOrder">
+				<text class="act-text-white">立即支付</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiOrderDetail, apiOrderLogistics, apiPayOrder, apiUpdateOrderStatus, apiUpdateOrderAddress, apiAddressList } from '../../utils/api.uts'
+	import { getUserId, requireLogin, getStorageString } from '../../utils/config.uts'
+	import {
+		money, formatTime, orderStatusText, orderPrice, productImage,
+		logisticsStatusText
+	} from '../../utils/util.uts'
+	import type { OrderInfo, Logistics, Address } from '../../utils/model.uts'
+
+	const orderId = ref(0)
+	const order = ref({} as OrderInfo)
+
+	const statusText = computed((): string => {
+		return orderStatusText(order.value.status)
+	})
+
+	const statusDesc = computed((): string => {
+		const s = order.value.status
+		if (s == 0) return '请尽快完成支付，支付后商家将安排发货'
+		if (s == 1) return '已支付，等待商家发货'
+		if (s == 2) return '商家已发货，请注意查收'
+		if (s == 3) return '订单已完成，感谢您的支持'
+		if (s == 4) return '订单已取消'
+		if (s == 5) return '退款申请处理中'
+		if (s == 6) return '退款已完成'
+		return ''
+	})
+
+	const goodsPrice = computed((): number => {
+		return orderPrice(order.value)
+	})
+
+	const goodsName = computed((): string => {
+		const p = order.value.product
+		if (p == null) {
+			return '商品 ' + order.value.productId
+		}
+		return p.name
+	})
+
+	const goodsImage = computed((): string => {
+		return productImage(order.value.product)
+	})
+
+	const merchantText = computed((): string => {
+		const m = order.value.merchant
+		if (m == null) {
+			return '平台自营'
+		}
+		const n = m.name
+		if (n == null || n.length == 0) {
+			return '平台自营'
+		}
+		return '供应商：' + n
+	})
+
+	const recvNameText = computed((): string => {
+		const v = order.value.recvName
+		return (v == null || v.length == 0) ? '未填写' : v
+	})
+
+	const recvPhoneText = computed((): string => {
+		const v = order.value.recvPhone
+		return (v == null || v.length == 0) ? '未填写' : v
+	})
+
+	const recvAddressText = computed((): string => {
+		const v = order.value.recvAddress
+		return (v == null || v.length == 0) ? '未填写' : v
+	})
+
+	const remarkText = computed((): string => {
+		const v = order.value.remark
+		return (v == null || v.length == 0) ? '无' : v
+	})
+
+	const refundText = computed((): string => {
+		const v = order.value.refundReason
+		return (v == null) ? '' : v
+	})
+
+	/** 物流信息：拉取后拆成扁平字段供模板读取 */
+	const hasLogistics = ref(false)
+	const lgCompany = ref('')
+	const lgTracking = ref('')
+	const lgExpected = ref('')
+	const lgUpdated = ref('')
+	const lgStatusText = ref('')
+
+	onLoad((options : OnLoadOptions) => {
+		if (!requireLogin()) {
+			return
+		}
+		const id = options['id'] as string | null
+		if (id != null && id.length > 0) {
+			orderId.value = parseInt(id)
+		}
+		loadDetail()
+	})
+
+	onShow(() => {
+		// 从地址页返回后回填收货信息
+		const picked = getStorageString('selectedAddressId')
+		if (picked.length > 0) {
+			uni.removeStorageSync('selectedAddressId')
+			applyNewAddress(parseInt(picked))
+		}
+	})
+
+	async function loadDetail() : Promise<void> {
+		if (orderId.value <= 0) {
+			return
+		}
+		try {
+			const o = await apiOrderDetail(orderId.value)
+			if (o != null) {
+				order.value = o
+				if (o.status >= 2 && o.status != 4) {
+					loadLogistics()
+				}
+			}
+		} catch (e) {
+		}
+	}
+
+	async function loadLogistics() : Promise<void> {
+		if (orderId.value <= 0) {
+			return
+		}
+		try {
+			const lg = await apiOrderLogistics(orderId.value)
+			if (lg == null) {
+				hasLogistics.value = false
+				uni.showToast({ title: '商家还未上传物流单号', icon: 'none' })
+				return
+			}
+			hasLogistics.value = true
+			lgCompany.value = (lg.companyName == null || lg.companyName.length == 0) ? '待商家上传' : lg.companyName
+			lgTracking.value = (lg.trackingNumber == null || lg.trackingNumber.length == 0) ? '待商家上传' : lg.trackingNumber
+			lgExpected.value = (lg.expectedArrivalTime == null || lg.expectedArrivalTime.length == 0) ? '待商家更新' : formatTime(lg.expectedArrivalTime)
+			lgUpdated.value = formatTime(lg.updatedAt)
+			lgStatusText.value = logisticsStatusText(lg.status)
+		} catch (e) {
+			hasLogistics.value = false
+		}
+	}
+
+	function refreshAll() : void {
+		loadDetail()
+		uni.showToast({ title: '已刷新', icon: 'none' })
+	}
+
+	function payOrder() : void {
+		uni.showModal({
+			title: '确认支付',
+			content: '本次为演示支付，确认后将扣减库存并通知商家发货',
+			confirmText: '确认支付',
+			success: (res) => {
+				if (res.confirm) {
+					doPay()
+				}
+			}
+		})
+	}
+
+	async function doPay() : Promise<void> {
+		uni.showLoading({ title: '支付中...' })
+		try {
+			await apiPayOrder(orderId.value)
+			uni.hideLoading()
+			uni.showToast({ title: '支付成功', icon: 'success' })
+			loadDetail()
+		} catch (e) {
+			uni.hideLoading()
+		}
+	}
+
+	function cancelOrder() : void {
+		uni.showModal({
+			title: '取消订单',
+			content: '确定取消该订单吗？',
+			success: (res) => {
+				if (res.confirm) {
+					doUpdateStatus(4, '订单已取消')
+				}
+			}
+		})
+	}
+
+	function confirmReceive() : void {
+		uni.showModal({
+			title: '确认收货',
+			content: '确认已经收到商品了吗？',
+			success: (res) => {
+				if (res.confirm) {
+					doUpdateStatus(3, '已确认收货')
+				}
+			}
+		})
+	}
+
+	async function doUpdateStatus(status : number, tip : string) : Promise<void> {
+		try {
+			await apiUpdateOrderStatus(orderId.value, status)
+			uni.showToast({ title: tip, icon: 'success' })
+			loadDetail()
+		} catch (e) {
+		}
+	}
+
+	function changeAddress() : void {
+		if (order.value.status > 1) {
+			uni.showToast({ title: '订单已发货，无法修改地址', icon: 'none' })
+			return
+		}
+		uni.navigateTo({ url: '/pages/address/address-list?mode=select' })
+	}
+
+	/** 选择新地址后同步到订单 */
+	async function applyNewAddress(addressId : number) : Promise<void> {
+		if (addressId <= 0) {
+			return
+		}
+		try {
+			const list = await apiAddressList(getUserId())
+			let picked : Address | null = null
+			list.forEach((a : Address) => {
+				if (a.id == addressId) {
+					picked = a
+				}
+			})
+			const target = picked
+			if (target == null) {
+				return
+			}
+			const rn = target.receiver
+			const name = (rn == null || rn.length == 0) ? '收货人' : rn
+			await apiUpdateOrderAddress(orderId.value, name, target.address, target.phone)
+			uni.showToast({ title: '收货信息已更新', icon: 'success' })
+			loadDetail()
+		} catch (e) {
+		}
+	}
+
+	function goProduct() : void {
+		const pid = order.value.productId
+		if (pid > 0) {
+			uni.navigateTo({ url: '/pages/product/product-detail?id=' + pid })
+		}
+	}
+</script>
+
+<style>
+	.detail-root {
+		flex: 1;
+		background-color: #F4F6F3;
+	}
+
+	.detail-scroll {
+		flex: 1;
+		padding: 10px;
+	}
+
+	.status-head {
+		background-image: linear-gradient(to right, #67C23A, #8FD46B);
+		border-radius: 12px;
+		padding: 18px 14px;
+		margin-bottom: 10px;
+	}
+
+	.status-title {
+		font-size: 20px;
+		font-weight: bold;
+		color: #FFFFFF;
+	}
+
+	.status-desc {
+		font-size: 12px;
+		color: #F0FBEA;
+		margin-top: 6px;
+	}
+
+	.block-title {
+		font-size: 15px;
+		font-weight: bold;
+		color: #303133;
+	}
+
+	.info-line {
+		flex-direction: row;
+		align-items: flex-start;
+		margin-top: 10px;
+	}
+
+	.info-label {
+		width: 76px;
+		font-size: 13px;
+		color: #909399;
+	}
+
+	.info-value {
+		flex: 1;
+		font-size: 13px;
+		color: #303133;
+	}
+
+	.edit-addr {
+		margin-top: 12px;
+		height: 34px;
+		border-radius: 17px;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.edit-addr-text {
+		font-size: 13px;
+		color: #67C23A;
+	}
+
+	.goods-row {
+		flex-direction: row;
+		padding-top: 10px;
+	}
+
+	.goods-img {
+		width: 76px;
+		height: 76px;
+		border-radius: 8px;
+		background-color: #F2F3F5;
+	}
+
+	.goods-info {
+		flex: 1;
+		margin-left: 10px;
+	}
+
+	.goods-name {
+		font-size: 14px;
+		color: #303133;
+	}
+
+	.goods-price {
+		font-size: 15px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.goods-qty {
+		font-size: 13px;
+		color: #909399;
+	}
+
+	.pay-amount {
+		font-size: 20px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.act-btn {
+		flex: 1;
+		height: 38px;
+		border-radius: 19px;
+		align-items: center;
+		justify-content: center;
+		margin-left: 8px;
+	}
+
+	.act-plain {
+		background-color: #FFFFFF;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #DCDFE6;
+	}
+
+	.act-primary {
+		background-color: #67C23A;
+	}
+
+	.act-warn {
+		background-color: #E6A23C;
+	}
+
+	.act-text-plain {
+		font-size: 13px;
+		color: #606266;
+	}
+
+	.act-text-white {
+		font-size: 13px;
+		color: #FFFFFF;
+	}
+</style>

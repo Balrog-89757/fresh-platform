@@ -1,0 +1,534 @@
+<template>
+	<view class="order-root">
+		<!-- 状态筛选 -->
+		<view class="tab-bar">
+			<view class="tab-item" v-for="(t, i) in tabs" :key="i" @click="changeTab(i)">
+				<text :class="i == tabIndex ? 'tab-text-on' : 'tab-text'">{{ t.label }}</text>
+				<view v-if="i == tabIndex" class="tab-line" />
+			</view>
+		</view>
+
+		<scroll-view class="order-scroll" direction="vertical" :show-scrollbar="false"
+			:lower-threshold="60" @scrolltolower="onLoadMore">
+			<view v-if="!loading && orders.length == 0" class="empty-box">
+				<text class="empty-text">暂无相关订单</text>
+				<view class="go-shop-btn" @click="goShop">
+					<text class="go-shop-text">去逛逛</text>
+				</view>
+			</view>
+
+			<view v-for="(o, i) in orders" :key="i" class="order-card">
+				<!-- 订单头 -->
+				<view class="row-between" @click="goDetail(o.id)">
+					<view class="row-start">
+						<text class="order-no">订单号 {{ o.id }}</text>
+					</view>
+					<text class="order-status" :style="'color:' + statusColor(o.status)">{{ statusText(o.status) }}</text>
+				</view>
+				<text class="order-time">{{ formatTime(o.createdAt) }}</text>
+
+				<view class="divider mt-8" />
+
+				<!-- 商品 -->
+				<view class="goods-row" @click="goDetail(o.id)">
+					<image class="goods-img" :src="orderImage(o)" mode="aspectFill" />
+					<view class="goods-info">
+						<text class="goods-name ellipsis-2">{{ orderName(o) }}</text>
+						<view class="row-between mt-6">
+							<text class="goods-price">¥{{ money(orderPrice(o)) }}</text>
+							<text class="goods-qty">× {{ o.quantity }}</text>
+						</view>
+						<text class="goods-origin ellipsis">{{ merchantText(o) }}</text>
+					</view>
+				</view>
+
+				<!-- 收货信息 -->
+				<view class="recv-box">
+					<text class="recv-text ellipsis">收货：{{ recvText(o) }}</text>
+					<text class="recv-text ellipsis">{{ recvAddrText(o) }}</text>
+				</view>
+
+				<view class="divider" />
+
+				<!-- 金额 -->
+				<view class="row-between mt-8">
+					<text class="fs-13 txt-sub">{{ o.quantity }} 件商品</text>
+					<text class="order-total">合计 ¥{{ money(o.totalPrice) }}</text>
+				</view>
+
+				<!-- 操作 -->
+				<view class="action-row">
+					<view class="act-btn act-plain" @click="goDetail(o.id)">
+						<text class="act-text-plain">订单详情</text>
+					</view>
+					<view v-if="o.status == 0" class="act-btn act-plain" @click="cancelOrder(o.id)">
+						<text class="act-text-plain">取消订单</text>
+					</view>
+					<view v-if="o.status >= 2 && o.status != 4" class="act-btn act-plain" @click="viewLogistics(o.id)">
+						<text class="act-text-plain">查看物流</text>
+					</view>
+					<view v-if="o.status == 2" class="act-btn act-warn" @click="confirmReceive(o.id)">
+						<text class="act-text-white">确认收货</text>
+					</view>
+					<view v-if="o.status == 0" class="act-btn act-primary" @click="payOrder(o.id)">
+						<text class="act-text-white">立即支付</text>
+					</view>
+				</view>
+
+				<!-- 未发货提示 -->
+				<view v-if="o.status == 1" class="hint-box">
+					<text class="hint-text">已通知商家备货，商家发货后即可查看物流信息</text>
+				</view>
+			</view>
+
+			<view v-if="loading" class="loading-box">
+				<text class="txt-sub fs-13">加载中...</text>
+			</view>
+			<view v-if="!loading && orders.length > 0 && finished" class="loading-box">
+				<text class="txt-light fs-12">— 没有更多订单了 —</text>
+			</view>
+			<view class="safe-bottom" />
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { apiOrderPage, apiPayOrder, apiUpdateOrderStatus, apiOrderLogistics } from '../../utils/api.uts'
+	import { getUserId, requireLogin, getStorageString } from '../../utils/config.uts'
+	import {
+		money, formatTime, orderStatusText, orderStatusColor,
+		orderPrice, productImage, orderStatusTabs
+	} from '../../utils/util.uts'
+	import type { StatusTab } from '../../utils/util.uts'
+	import type { OrderInfo, Logistics } from '../../utils/model.uts'
+
+	const tabs = orderStatusTabs()
+	const tabIndex = ref(0)
+	const orders = ref([] as Array<OrderInfo>)
+	const pageNo = ref(1)
+	const pageSize = 10
+	const loading = ref(false)
+	const finished = ref(false)
+	const hasLoaded = ref(false)
+
+	onShow(() => {
+		// 「我的」页面点击订单统计后会写入目标 tab
+		const wantTab = getStorageString('orderTab')
+		if (wantTab.length > 0) {
+			uni.removeStorageSync('orderTab')
+			const n = parseInt(wantTab)
+			if (!isNaN(n) && n >= 0 && n < tabs.length) {
+				tabIndex.value = n
+			}
+		}
+		loadOrders(true)
+	})
+
+	onReachBottom(() => {
+		loadOrders(false)
+	})
+
+	/** scroll-view 触底加载更多 */
+	function onLoadMore() : void {
+		loadOrders(false)
+	}
+
+	onPullDownRefresh(() => {
+		loadOrders(true)
+		uni.stopPullDownRefresh()
+	})
+
+	async function loadOrders(reset : boolean) : Promise<void> {
+		if (!requireLogin()) {
+			orders.value = [] as Array<OrderInfo>
+			return
+		}
+		if (loading.value) {
+			return
+		}
+		if (!reset && finished.value) {
+			return
+		}
+		if (reset) {
+			pageNo.value = 1
+			finished.value = false
+		}
+		loading.value = true
+		try {
+			const status = tabs[tabIndex.value].value
+			const list = await apiOrderPage(getUserId(), status, pageNo.value, pageSize)
+			if (reset) {
+				orders.value = list
+			} else {
+				orders.value = orders.value.concat(list)
+			}
+			hasLoaded.value = true
+			if (list.length < pageSize) {
+				finished.value = true
+			} else {
+				pageNo.value = pageNo.value + 1
+			}
+		} catch (e) {
+			if (reset) {
+				orders.value = [] as Array<OrderInfo>
+			}
+			finished.value = true
+		} finally {
+			loading.value = false
+		}
+	}
+
+	function changeTab(index : number) : void {
+		if (index == tabIndex.value) {
+			return
+		}
+		tabIndex.value = index
+		loadOrders(true)
+	}
+
+	/* ---------------- 操作 ---------------- */
+
+	function payOrder(id : number) : void {
+		uni.showModal({
+			title: '确认支付',
+			content: '本次为演示支付，确认后将扣减库存并通知商家发货',
+			confirmText: '确认支付',
+			success: (res) => {
+				if (res.confirm) {
+					doPay(id)
+				}
+			}
+		})
+	}
+
+	async function doPay(id : number) : Promise<void> {
+		uni.showLoading({ title: '支付中...' })
+		try {
+			await apiPayOrder(id)
+			uni.hideLoading()
+			uni.showToast({ title: '支付成功', icon: 'success' })
+			loadOrders(true)
+		} catch (e) {
+			uni.hideLoading()
+		}
+	}
+
+	function cancelOrder(id : number) : void {
+		uni.showModal({
+			title: '取消订单',
+			content: '确定取消该订单吗？',
+			success: (res) => {
+				if (res.confirm) {
+					doUpdateStatus(id, 4, '订单已取消')
+				}
+			}
+		})
+	}
+
+	function confirmReceive(id : number) : void {
+		uni.showModal({
+			title: '确认收货',
+			content: '确认已经收到商品了吗？',
+			success: (res) => {
+				if (res.confirm) {
+					doUpdateStatus(id, 3, '已确认收货')
+				}
+			}
+		})
+	}
+
+	async function doUpdateStatus(id : number, status : number, tip : string) : Promise<void> {
+		try {
+			await apiUpdateOrderStatus(id, status)
+			uni.showToast({ title: tip, icon: 'success' })
+			loadOrders(true)
+		} catch (e) {
+		}
+	}
+
+	async function viewLogistics(id : number) : Promise<void> {
+		uni.showLoading({ title: '查询物流...' })
+		try {
+			const lg = await apiOrderLogistics(id)
+			uni.hideLoading()
+			if (lg == null) {
+				uni.showToast({ title: '商家还未上传物流单号', icon: 'none' })
+				return
+			}
+			showLogistics(lg)
+		} catch (e) {
+			uni.hideLoading()
+		}
+	}
+
+	function showLogistics(lg : Logistics) : void {
+		const company = lg.companyName == null ? '快递公司待更新' : lg.companyName
+		const no = lg.trackingNumber == null ? '单号待更新' : lg.trackingNumber
+		uni.showModal({
+			title: '物流信息',
+			content: company + '\n运单号：' + no + '\n收货人：' + recvTextOf(lg.receiverName)
+				+ '\n电话：' + recvTextOf(lg.receiverPhone)
+				+ '\n地址：' + recvTextOf(lg.receiverAddress),
+			showCancel: false,
+			confirmText: '知道了'
+		})
+	}
+
+	function goDetail(id : number) : void {
+		uni.navigateTo({ url: '/pages/order/order-detail?id=' + id })
+	}
+
+	function goShop() : void {
+		uni.switchTab({ url: '/pages/index/index' })
+	}
+
+	/* ---------------- 展示辅助 ---------------- */
+
+	function statusText(status : number) : string {
+		return orderStatusText(status)
+	}
+
+	function statusColor(status : number) : string {
+		return orderStatusColor(status)
+	}
+
+	function orderName(o : OrderInfo) : string {
+		const p = o.product
+		if (p == null) {
+			return '商品 ' + o.productId
+		}
+		return p.name
+	}
+
+	function orderImage(o : OrderInfo) : string {
+		return productImage(o.product)
+	}
+
+	function merchantText(o : OrderInfo) : string {
+		const m = o.merchant
+		if (m == null) {
+			return '平台自营'
+		}
+		const n = m.name
+		if (n == null || n.length == 0) {
+			return '平台自营'
+		}
+		return '供应商：' + n
+	}
+
+	function recvText(o : OrderInfo) : string {
+		const n = o.recvName
+		const p = o.recvPhone
+		const name = (n == null || n.length == 0) ? '未填写收货人' : n
+		const phone = (p == null || p.length == 0) ? '' : (' ' + p)
+		return name + phone
+	}
+
+	function recvAddrText(o : OrderInfo) : string {
+		const a = o.recvAddress
+		if (a == null || a.length == 0) {
+			return '未填写收货地址'
+		}
+		return a
+	}
+
+	function recvTextOf(v : string | null) : string {
+		if (v == null || v.length == 0) {
+			return '暂无'
+		}
+		return v
+	}
+</script>
+
+<style>
+	.order-root {
+		flex: 1;
+		background-color: #F4F6F3;
+	}
+
+	.tab-bar {
+		flex-direction: row;
+		align-items: center;
+		background-color: #FFFFFF;
+	}
+
+	.tab-item {
+		flex: 1;
+		align-items: center;
+		padding-top: 12px;
+		padding-bottom: 8px;
+	}
+
+	.tab-text {
+		font-size: 14px;
+		color: #606266;
+	}
+
+	.tab-text-on {
+		font-size: 14px;
+		color: #67C23A;
+		font-weight: bold;
+	}
+
+	.tab-line {
+		width: 22px;
+		height: 3px;
+		border-radius: 2px;
+		background-color: #67C23A;
+		margin-top: 4px;
+	}
+
+	.order-scroll {
+		flex: 1;
+		padding: 10px;
+	}
+
+	.order-card {
+		background-color: #FFFFFF;
+		border-radius: 12px;
+		padding: 12px;
+		margin-bottom: 10px;
+	}
+
+	.order-no {
+		font-size: 13px;
+		color: #909399;
+	}
+
+	.order-status {
+		font-size: 14px;
+		font-weight: bold;
+	}
+
+	.order-time {
+		font-size: 11px;
+		color: #C0C4CC;
+		margin-top: 2px;
+	}
+
+	.goods-row {
+		flex-direction: row;
+		padding-top: 10px;
+		padding-bottom: 10px;
+	}
+
+	.goods-img {
+		width: 72px;
+		height: 72px;
+		border-radius: 8px;
+		background-color: #F2F3F5;
+	}
+
+	.goods-info {
+		flex: 1;
+		margin-left: 10px;
+	}
+
+	.goods-name {
+		font-size: 14px;
+		color: #303133;
+	}
+
+	.goods-price {
+		font-size: 15px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.goods-qty {
+		font-size: 13px;
+		color: #909399;
+	}
+
+	.goods-origin {
+		font-size: 11px;
+		color: #909399;
+		margin-top: 4px;
+	}
+
+	.recv-box {
+		background-color: #F7F8FA;
+		border-radius: 8px;
+		padding: 8px;
+	}
+
+	.recv-text {
+		font-size: 12px;
+		color: #606266;
+	}
+
+	.order-total {
+		font-size: 15px;
+		font-weight: bold;
+		color: #FF4D2D;
+	}
+
+	.action-row {
+		flex-direction: row;
+		justify-content: flex-end;
+		margin-top: 10px;
+	}
+
+	.act-btn {
+		height: 32px;
+		padding-left: 14px;
+		padding-right: 14px;
+		border-radius: 16px;
+		align-items: center;
+		justify-content: center;
+		margin-left: 8px;
+	}
+
+	.act-plain {
+		background-color: #FFFFFF;
+		border-width: 1px;
+		border-style: solid;
+		border-color: #DCDFE6;
+	}
+
+	.act-primary {
+		background-color: #67C23A;
+	}
+
+	.act-warn {
+		background-color: #E6A23C;
+	}
+
+	.act-text-plain {
+		font-size: 13px;
+		color: #606266;
+	}
+
+	.act-text-white {
+		font-size: 13px;
+		color: #FFFFFF;
+	}
+
+	.hint-box {
+		background-color: #FDF3E5;
+		border-radius: 8px;
+		padding: 8px;
+		margin-top: 10px;
+	}
+
+	.hint-text {
+		font-size: 11px;
+		color: #D98A22;
+	}
+
+	.go-shop-btn {
+		height: 38px;
+		padding-left: 26px;
+		padding-right: 26px;
+		border-radius: 19px;
+		background-color: #67C23A;
+		align-items: center;
+		justify-content: center;
+		margin-top: 14px;
+	}
+
+	.go-shop-text {
+		font-size: 15px;
+		color: #FFFFFF;
+	}
+</style>
